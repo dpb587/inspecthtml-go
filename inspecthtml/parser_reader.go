@@ -1,0 +1,213 @@
+package inspecthtml
+
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"regexp"
+	"strconv"
+	"unicode"
+
+	"github.com/dpb587/cursorio-go/cursorio"
+	"golang.org/x/net/html"
+)
+
+var emptyQuotes = []byte(`""`)
+var equalEmptyQuotes = []byte(`=""`)
+
+type parserNodeSwap struct {
+	original    string
+	offsetRange cursorio.TextOffsetRange
+}
+
+type parserReader struct {
+	tokenizer *html.Tokenizer
+	doc       *cursorio.TextWriter
+
+	err  error
+	buf  []byte
+	bufi int
+
+	nodeIdx       int64
+	nodeTagByKey  map[string]*NodeMetadata
+	nodeSwapByKey map[string]parserNodeSwap
+}
+
+func (r *parserReader) Read(p []byte) (int, error) {
+	if r.err != nil {
+		return 0, r.err
+	} else if r.bufi >= len(r.buf) {
+		r.err = r.next()
+		if r.err != nil {
+			return 0, r.err
+		}
+	}
+
+	var l = copy(p, r.buf[r.bufi:])
+
+	r.bufi += l
+
+	return l, nil
+}
+
+func (r *parserReader) next() error {
+	r.bufi = 0
+
+	tt := r.tokenizer.Next()
+	if tt == html.ErrorToken {
+		return r.tokenizer.Err()
+	}
+
+	// copy and avoid append reusing tokenizer's byte slice
+	raw := []byte(string(r.tokenizer.Raw()))
+
+	switch tt {
+	case html.SelfClosingTagToken, html.StartTagToken:
+		rawCutset := raw
+
+		docOffset := r.doc.GetTextOffset()
+		tagProfile := &NodeMetadata{
+			TokenOffsets: cursorio.TextOffsetRange{
+				From: docOffset,
+			},
+			TagSelfClosing: tt == html.SelfClosingTagToken,
+		}
+
+		tagNameMatcher := regexp.MustCompile(`^<([^\s/>]+)`).FindSubmatchIndex(rawCutset)
+		if tagNameMatcher != nil {
+			r.doc.Write(rawCutset[:tagNameMatcher[2]])
+
+			tagNameOffsets := r.doc.WriteForOffsetRange(rawCutset[tagNameMatcher[2]:tagNameMatcher[3]])
+			tagProfile.TagNameOffsets = &tagNameOffsets
+
+			rawCutset = rawCutset[tagNameMatcher[3]:]
+		}
+
+		var lastAttrSuffix []byte
+
+		_, hasAttr := r.tokenizer.TagName()
+		for hasAttr {
+			attrKey, attrValue, more := r.tokenizer.TagAttr()
+
+			rawAttrMatcher := regexp.MustCompile(`.*?\s+([^=\s/>]+)((\s*=)(.))?`).FindSubmatchIndex(rawCutset)
+
+			if rawAttrMatcher == nil {
+				// <script async src="https://example.com/asset?shop="quoteful.example.com"></script>
+
+				// ignore
+				// risky to not advance cursor; possible early regex match for next attribute?
+				tagProfile.TagAttr = append(tagProfile.TagAttr, nil)
+			} else {
+				r.doc.Write(rawCutset[:rawAttrMatcher[2]])
+
+				tagAttrProfile := NodeAttributeMetadata{
+					KeyOffsets: r.doc.WriteForOffsetRange(rawCutset[rawAttrMatcher[2]:rawAttrMatcher[3]]),
+				}
+
+				if rawAttrMatcher[4] > -1 {
+					r.doc.Write(rawCutset[rawAttrMatcher[6]:rawAttrMatcher[7]])
+					rawCutset = rawCutset[rawAttrMatcher[8]:]
+
+					var consumeLen int
+
+					if rawCutset[0] == '"' {
+						closeMatcher := regexp.MustCompile(`.*?"`).FindSubmatchIndex(rawCutset[1:])
+
+						if closeMatcher == nil {
+							// weird
+						} else {
+							consumeLen = closeMatcher[1] + 1
+						}
+					} else if rawCutset[0] == '\'' {
+						closeMatcher := regexp.MustCompile(`.*?'`).FindSubmatchIndex(rawCutset[1:])
+
+						if closeMatcher == nil {
+							// weird
+						} else {
+							consumeLen = closeMatcher[1] + 1
+						}
+					} else if !unicode.IsSpace(rune(rawCutset[0])) {
+						closeMatcher := regexp.MustCompile(`[^\s]+`).FindSubmatchIndex(rawCutset[1:])
+
+						if closeMatcher == nil {
+							// weird
+						} else {
+							consumeLen = closeMatcher[1]
+						}
+					}
+
+					if consumeLen > 0 {
+						valueOffsetRange := r.doc.WriteForOffsetRange(rawCutset[:consumeLen])
+						tagAttrProfile.ValueOffsets = &valueOffsetRange
+
+						rawCutset = rawCutset[consumeLen:]
+					} else {
+						lastAttrSuffix = emptyQuotes
+					}
+				} else if len(attrValue) > 0 {
+					// an edge case worth fixing; almost panic-worthy; subsequent attributes may no longer be correct
+					fmt.Fprintf(os.Stderr, "inspecthtml: regex attr failed (raw=%q, key=%q, val=%q)", string(rawCutset), string(attrKey), string(attrValue))
+				} else {
+					rawCutset = rawCutset[rawAttrMatcher[3]:]
+					lastAttrSuffix = equalEmptyQuotes
+				}
+
+				tagProfile.TagAttr = append(tagProfile.TagAttr, &tagAttrProfile)
+			}
+
+			hasAttr = more
+		}
+
+		r.doc.Write(rawCutset)
+
+		tagProfile.TokenOffsets.Until = r.doc.GetTextOffset()
+
+		r.nodeIdx++
+		nodeKey := strconv.FormatInt(r.nodeIdx, 36)
+
+		r.nodeTagByKey[nodeKey] = tagProfile
+
+		var wSuffix = []byte(fmt.Sprintf(" o=%q", nodeKey))
+
+		if len(lastAttrSuffix) > 0 {
+			wSuffix = append(lastAttrSuffix[:], wSuffix...)
+		}
+
+		if bytes.HasSuffix(raw, []byte("/>")) {
+			wSuffix = append(wSuffix, '/', '>')
+			raw = raw[:len(raw)-2]
+		} else if bytes.HasSuffix(raw, []byte(">")) {
+			wSuffix = append(wSuffix, '>')
+			raw = raw[:len(raw)-1]
+		}
+
+		r.buf = append(raw, wSuffix...)
+	case html.EndTagToken:
+		docOffsetRange := r.doc.WriteForOffsetRange(raw)
+
+		r.buf = append(raw, []byte("<!--"+docOffsetRange.OffsetRangeString()+"-->")...)
+	case html.CommentToken:
+		r.nodeIdx++
+		nodeKey := strconv.FormatInt(r.nodeIdx, 36)
+		r.nodeSwapByKey[nodeKey] = parserNodeSwap{
+			original:    string(raw)[4 : len(raw)-3],
+			offsetRange: r.doc.WriteForOffsetRange(raw),
+		}
+
+		r.buf = []byte("<!--[" + nodeKey + "-->")
+	case html.TextToken:
+		r.nodeIdx++
+		nodeKey := strconv.FormatInt(r.nodeIdx, 36)
+		r.nodeSwapByKey[nodeKey] = parserNodeSwap{
+			original:    r.tokenizer.Token().Data,
+			offsetRange: r.doc.WriteForOffsetRange(raw),
+		}
+
+		r.buf = []byte("[" + nodeKey)
+	default:
+		r.doc.Write(raw)
+		r.buf = raw
+	}
+
+	return nil
+}

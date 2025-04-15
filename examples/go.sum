@@ -1,0 +1,6 @@
+github.com/apparentlymart/go-textseg/v16 v16.0.0 h1:xD7KZ/8d+ED3d+k78g/2weJEIGzDMreyMqntQymTZB0=
+github.com/apparentlymart/go-textseg/v16 v16.0.0/go.mod h1:wCrfQB/AReGqD1ECqVHhhsq7BV2AxUhnirsBLInYHvE=
+github.com/dpb587/cursorio-go v0.0.0-20250415220656-c43e40f866fd h1:syuWYbcolG3GMI0R3iMcbPZSFrEEwR73FwvSWlvxMcY=
+github.com/dpb587/cursorio-go v0.0.0-20250415220656-c43e40f866fd/go.mod h1:YokGb5i31XI0Z+4t8bZxvZecyKY3ddLlih9Rr7eBgW0=
+golang.org/x/net v0.39.0 h1:ZCu7HMWDxpXpaiKdhzIfaltL9Lp31x/3fCP11bc6/fY=
+golang.org/x/net v0.39.0/go.mod h1:X7NRbYVEA+ewNkCNyJ513WmMdQ3BineSwVtN2zD/d+E=
