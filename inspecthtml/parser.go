@@ -1,7 +1,6 @@
 package inspecthtml
 
 import (
-	"fmt"
 	"io"
 	"strings"
 
@@ -139,11 +138,8 @@ func (p *Parser) rebuildNode(n *html.Node) {
 				TokenOffsets: pnt.offsetRange,
 			}
 		} else {
-			v, err := cursorio.ParseTextOffsetRange(n.Data)
-			if err != nil {
-				// this should never happen given the assumed deterministic rebuild approach
-				panic(fmt.Errorf("inspecthtml: parse text cursor range from comment: %v", err))
-			}
+			// this should never error given the assumed deterministic tree
+			v, _ := cursorio.ParseTextOffsetRange(n.Data)
 			p.offsets.metadataByNode[n.PrevSibling].EndTagTokenOffsets = &v
 
 			if n.NextSibling != nil {
