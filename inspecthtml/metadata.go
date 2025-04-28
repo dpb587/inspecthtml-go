@@ -25,6 +25,10 @@ func (n NodeMetadata) GetOuterOffsets() cursorio.TextOffsetRange {
 	}
 }
 
+func (n NodeMetadata) HasInner() bool {
+	return n.EndTagTokenOffsets != nil
+}
+
 func (n NodeMetadata) GetInnerOffsets() cursorio.TextOffsetRange {
 	if n.EndTagTokenOffsets == nil {
 		// caller should know the type of offsets they're looking for
@@ -36,6 +40,8 @@ func (n NodeMetadata) GetInnerOffsets() cursorio.TextOffsetRange {
 		Until: n.EndTagTokenOffsets.From,
 	}
 }
+
+//
 
 type NodeAttributeMetadata struct {
 	KeyOffsets   cursorio.TextOffsetRange
