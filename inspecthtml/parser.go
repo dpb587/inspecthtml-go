@@ -77,42 +77,51 @@ func (p *Parser) rebuild(root *html.Node) {
 func (p *Parser) rebuildNode(n *html.Node) {
 	switch n.Type {
 	case html.TextNode:
-		if n.Data[0] != '[' {
-			return
+		split := strings.SplitN(n.Data[1:], "t", 2)
+		swap := p.r.nodeSwapByKey[split[0]]
+		n.Data = swap.original
+
+		p.offsets.metadataByNode[n] = &NodeMetadata{
+			TokenOffsets: swap.offsetRange,
 		}
 
-		for keyIdx, key := range strings.Split(n.Data[1:], "[") {
-			swap := p.r.nodeSwapByKey[key]
-
-			if keyIdx == 0 {
-				n.Data = swap.original
-			} else {
-				inject := &html.Node{
-					Parent:      n.Parent,
-					PrevSibling: n,
-					NextSibling: n.NextSibling,
-					Type:        html.TextNode,
-					Data:        swap.original,
-				}
-
-				n.NextSibling = inject
-				n = inject
+		if len(split) > 1 {
+			inject := &html.Node{
+				Parent:      n.Parent,
+				PrevSibling: n,
+				NextSibling: n.NextSibling,
+				Type:        html.TextNode,
+				Data:        "t" + split[1],
 			}
 
-			p.offsets.metadataByNode[n] = &NodeMetadata{
-				TokenOffsets: swap.offsetRange,
-			}
-		}
+			n.NextSibling = inject
+			n = inject
 
-		if n.NextSibling != nil {
-			n.NextSibling.PrevSibling = n
-		} else if n.Parent != nil {
-			n.Parent.LastChild = n
+			if n.NextSibling != nil {
+				n.NextSibling.PrevSibling = n
+			} else if n.Parent != nil {
+				n.Parent.LastChild = n
+			}
 		}
 
 		return
 	case html.CommentNode:
-		if n.Data[0] != '[' {
+		if n.Data[0] == 'c' {
+			pnt := p.r.nodeSwapByKey[n.Data[1:]]
+			n.Data = pnt.original
+
+			p.offsets.metadataByNode[n] = &NodeMetadata{
+				TokenOffsets: pnt.offsetRange,
+			}
+		} else if n.Data[0] == 't' {
+			pnt := p.r.nodeSwapByKey[n.Data[1:]]
+			n.Type = html.TextNode
+			n.Data = pnt.original
+
+			p.offsets.metadataByNode[n] = &NodeMetadata{
+				TokenOffsets: pnt.offsetRange,
+			}
+		} else {
 			v, err := cursorio.ParseTextOffsetRange(n.Data)
 			if err != nil {
 				// this should never happen given the assumed deterministic rebuild approach
@@ -127,13 +136,6 @@ func (p *Parser) rebuildNode(n *html.Node) {
 			}
 
 			n.PrevSibling.NextSibling = n.NextSibling
-		} else {
-			pnt := p.r.nodeSwapByKey[n.Data[1:]]
-			n.Data = pnt.original
-
-			p.offsets.metadataByNode[n] = &NodeMetadata{
-				TokenOffsets: pnt.offsetRange,
-			}
 		}
 
 		return

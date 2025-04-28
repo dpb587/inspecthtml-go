@@ -18,6 +18,24 @@ func visitNode(n *html.Node, f func(n *html.Node)) {
 	}
 }
 
+func TestReaderHeadSpaceBug(t *testing.T) {
+	document, _, err := Parse(strings.NewReader("<html><head> <template>content</template> <meta/> </head></html>"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// previous implementation replaced whitespace with non-whitespace
+	// which has significance to the tokenizer (and started the body early)
+
+	var rendered = &bytes.Buffer{}
+	err = html.Render(rendered, document)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	} else if _a, _e := rendered.String(), "<html><head> <template>content</template> <meta/> </head><body></body></html>"; _a != _e {
+		t.Errorf("rendered: expected %v, got %v", _e, _a)
+	}
+}
+
 func TestReaderTag(t *testing.T) {
 	document, documentOffsets, err := Parse(strings.NewReader("<html><body><p>hello</p></body></html>"))
 	if err != nil {

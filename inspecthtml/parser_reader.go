@@ -194,7 +194,7 @@ func (r *parserReader) next() error {
 			offsetRange: r.doc.WriteForOffsetRange(raw),
 		}
 
-		r.buf = []byte("<!--[" + nodeKey + "-->")
+		r.buf = []byte("<!--c" + nodeKey + "-->")
 	case html.TextToken:
 		r.nodeIdx++
 		nodeKey := strconv.FormatInt(r.nodeIdx, 36)
@@ -203,7 +203,13 @@ func (r *parserReader) next() error {
 			offsetRange: r.doc.WriteForOffsetRange(raw),
 		}
 
-		r.buf = []byte("[" + nodeKey)
+		// WS vs non-WS is significant to tokenizer; maybe only relevant outside of body?
+		// for now, avoid special-casing (e.g. <head> </head>; <script>text</script>)
+		if bytes.ContainsFunc(raw, unicode.IsSpace) {
+			r.buf = []byte("<!--t" + nodeKey + "-->")
+		} else {
+			r.buf = []byte("t" + nodeKey)
+		}
 	default:
 		r.doc.Write(raw)
 		r.buf = raw
