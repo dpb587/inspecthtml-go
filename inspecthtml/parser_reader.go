@@ -213,10 +213,20 @@ func (r *parserReader) next() error {
 
 		// WS vs non-WS is significant to tokenizer; maybe only relevant outside of body?
 		// for now, avoid special-casing (e.g. <head> </head>; <script>text</script>)
-		if bytes.ContainsFunc(raw, unicode.IsSpace) {
-			r.buf = []byte("<!--t" + nodeKey + "-->")
-		} else {
+		if bytes.ContainsFunc(raw, func(r rune) bool {
+			if uint32(r) <= unicode.MaxLatin1 {
+				switch r {
+				case '\t', '\n', '\v', '\f', '\r', ' ', 0x85, 0xA0:
+					return false
+				}
+				return true
+			}
+
+			return !unicode.Is(unicode.White_Space, r)
+		}) {
 			r.buf = []byte("t" + nodeKey)
+		} else {
+			r.buf = []byte("<!--t" + nodeKey + "-->")
 		}
 	default:
 		r.doc.Write(raw)
