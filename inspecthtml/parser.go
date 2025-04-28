@@ -9,6 +9,10 @@ import (
 	"golang.org/x/net/html"
 )
 
+type ParserOption interface {
+	apply(*ParserConfig)
+}
+
 type Parser struct {
 	r *parserReader
 
@@ -27,12 +31,18 @@ func NewParser(r io.Reader, opts ...ParserOption) *Parser {
 		},
 	}
 
-	for _, opt := range opts {
-		opt.apply(p)
+	cfg := &ParserConfig{
+		initialOffset: &cursorio.TextOffset{},
 	}
 
-	if p.r.doc == nil {
-		p.r.doc = cursorio.NewTextWriter(cursorio.TextOffset{})
+	for _, opt := range opts {
+		opt.apply(cfg)
+	}
+
+	p.r.doc = cursorio.NewTextWriter(*cfg.initialOffset)
+
+	if cfg.tokenizerInterceptor != nil {
+		p.r.tokenizer = cfg.tokenizerInterceptor(p.r.tokenizer)
 	}
 
 	return p
