@@ -14,7 +14,8 @@ type ParserOption interface {
 }
 
 type Parser struct {
-	r *parserReader
+	r       *parserReader
+	rActual io.Reader
 
 	parseRoot       *html.Node
 	parseErr        error
@@ -45,12 +46,18 @@ func NewParser(r io.Reader, opts ...ParserOption) *Parser {
 		p.r.tokenizer = cfg.tokenizerInterceptor(p.r.tokenizer)
 	}
 
+	if cfg.readerInterceptor != nil {
+		p.rActual = cfg.readerInterceptor(p.r)
+	} else {
+		p.rActual = p.r
+	}
+
 	return p
 }
 
 func (p *Parser) Parse() (*html.Node, *ParseMetadata, error) {
 	if p.parseRoot == nil && p.parseErr == nil {
-		p.parseRoot, p.parseErr = html.Parse(p.r)
+		p.parseRoot, p.parseErr = html.Parse(p.rActual)
 		if p.parseErr == nil {
 			p.rebuild(p.parseRoot)
 		}
@@ -61,7 +68,7 @@ func (p *Parser) Parse() (*html.Node, *ParseMetadata, error) {
 
 func (p *Parser) ParseWithOptions(opts ...html.ParseOption) (*html.Node, *ParseMetadata, error) {
 	if p.parseRoot == nil && p.parseErr == nil {
-		p.parseRoot, p.parseErr = html.ParseWithOptions(p.r, opts...)
+		p.parseRoot, p.parseErr = html.ParseWithOptions(p.rActual, opts...)
 		if p.parseErr == nil {
 			p.rebuild(p.parseRoot)
 		}
