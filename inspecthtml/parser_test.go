@@ -344,6 +344,21 @@ func TestReaderTagAttrNull(t *testing.T) {
 	}
 }
 
+func TestReaderTagAttrNullOther(t *testing.T) {
+	document, _, err := Parse(strings.NewReader(`<address itemscope itemtype="http://microformats.org/profile/hcard"/>`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var rendered = &bytes.Buffer{}
+	err = html.Render(rendered, document)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	} else if _a, _e := rendered.String(), `<html><head></head><body><address itemscope="" itemtype="http://microformats.org/profile/hcard"></address></body></html>`; _a != _e {
+		t.Errorf("rendered: expected %v, got %v", _e, _a)
+	}
+}
+
 func TestReaderTagAttrUnquoted(t *testing.T) {
 	document, documentOffsets, err := Parse(strings.NewReader("<html><body><p title=none>hello</p></body></html>"))
 	if err != nil {
@@ -1199,6 +1214,41 @@ func TestReaderTextReparentedMerged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	} else if _a, _e := rendered.String(), "<html><head></head><body>onetwo<table><tbody><tr><td>three</td></tr></tbody></table></body></html>"; _a != _e {
+		t.Errorf("rendered: expected %v, got %v", _e, _a)
+	}
+}
+
+func TestReaderLessTrivialBug(t *testing.T) {
+	document, _, err := Parse(strings.NewReader(`<address itemscope itemtype="http://microformats.org/profile/hcard">
+ <strong itemprop="fn"><span itemprop="n" itemscope><span itemprop="given-name">Alfred</span>
+ <span itemprop="family-name">Person</span></span></strong> <br>
+ <span itemprop="adr" itemscope>
+  <span itemprop="street-address">1600 Amphitheatre Parkway</span> <br>
+  <span itemprop="street-address">Building 43, Second Floor</span> <br>
+  <span itemprop="locality">Mountain View</span>,
+   <span itemprop="region">CA</span> <span itemprop="postal-code">94043</span>
+ </span>
+</address>`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// previous implementation formatted lookup keys with alpha[numeric] characters which broke boundaries
+
+	var rendered = &bytes.Buffer{}
+	err = html.Render(rendered, document)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	} else if _a, _e := rendered.String(), `<html><head></head><body><address itemscope="" itemtype="http://microformats.org/profile/hcard">
+ <strong itemprop="fn"><span itemprop="n" itemscope=""><span itemprop="given-name">Alfred</span>
+ <span itemprop="family-name">Person</span></span></strong> <br/>
+ <span itemprop="adr" itemscope="">
+  <span itemprop="street-address">1600 Amphitheatre Parkway</span> <br/>
+  <span itemprop="street-address">Building 43, Second Floor</span> <br/>
+  <span itemprop="locality">Mountain View</span>,
+   <span itemprop="region">CA</span> <span itemprop="postal-code">94043</span>
+ </span>
+</address></body></html>`; _a != _e {
 		t.Errorf("rendered: expected %v, got %v", _e, _a)
 	}
 }

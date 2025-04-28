@@ -118,6 +118,8 @@ func (r *parserReader) next() error {
 						} else {
 							consumeLen = closeMatcher[1] + 1
 						}
+
+						lastAttrSuffix = nil
 					} else if rawCutset[0] == '\'' {
 						closeMatcher := regexp.MustCompile(`.*?'`).FindSubmatchIndex(rawCutset[1:])
 
@@ -126,6 +128,8 @@ func (r *parserReader) next() error {
 						} else {
 							consumeLen = closeMatcher[1] + 1
 						}
+
+						lastAttrSuffix = nil
 					} else if !unicode.IsSpace(rune(rawCutset[0])) {
 						closeMatcher := regexp.MustCompile(`[^\s]+`).FindSubmatchIndex(rawCutset[1:])
 
@@ -134,6 +138,8 @@ func (r *parserReader) next() error {
 						} else {
 							consumeLen = closeMatcher[1]
 						}
+
+						lastAttrSuffix = nil
 					}
 
 					if consumeLen > 0 {
@@ -163,15 +169,17 @@ func (r *parserReader) next() error {
 		tagProfile.TokenOffsets.Until = r.doc.GetTextOffset()
 
 		r.nodeIdx++
-		nodeKey := strconv.FormatInt(r.nodeIdx, 36)
+		nodeKey := strconv.FormatInt(r.nodeIdx, 10)
 
 		r.nodeTagByKey[nodeKey] = tagProfile
 
-		var wSuffix = []byte(fmt.Sprintf(" o=%q", nodeKey))
+		var wSuffix []byte
 
 		if len(lastAttrSuffix) > 0 {
 			wSuffix = append(lastAttrSuffix[:], wSuffix...)
 		}
+
+		wSuffix = fmt.Appendf(wSuffix, " o=%q", nodeKey)
 
 		if bytes.HasSuffix(raw, []byte("/>")) {
 			wSuffix = append(wSuffix, '/', '>')
@@ -188,7 +196,7 @@ func (r *parserReader) next() error {
 		r.buf = append(raw, []byte("<!--"+docOffsetRange.OffsetRangeString()+"-->")...)
 	case html.CommentToken:
 		r.nodeIdx++
-		nodeKey := strconv.FormatInt(r.nodeIdx, 36)
+		nodeKey := strconv.FormatInt(r.nodeIdx, 10)
 		r.nodeSwapByKey[nodeKey] = parserNodeSwap{
 			original:    string(raw)[4 : len(raw)-3],
 			offsetRange: r.doc.WriteForOffsetRange(raw),
@@ -197,7 +205,7 @@ func (r *parserReader) next() error {
 		r.buf = []byte("<!--c" + nodeKey + "-->")
 	case html.TextToken:
 		r.nodeIdx++
-		nodeKey := strconv.FormatInt(r.nodeIdx, 36)
+		nodeKey := strconv.FormatInt(r.nodeIdx, 10)
 		r.nodeSwapByKey[nodeKey] = parserNodeSwap{
 			original:    r.tokenizer.Token().Data,
 			offsetRange: r.doc.WriteForOffsetRange(raw),
