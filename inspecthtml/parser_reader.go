@@ -89,7 +89,7 @@ func (r *parserReader) next() error {
 		for hasAttr {
 			attrKey, attrValue, more := r.tokenizer.TagAttr()
 
-			rawAttrMatcher := regexp.MustCompile(`.*?\s+([^=\s/>]+)((\s*=)(.))?`).FindSubmatchIndex(rawCutset)
+			rawAttrMatcher := regexp.MustCompile(`.*?\s+([^=\s/>]+)((\s*=\s*)(.))?`).FindSubmatchIndex(rawCutset)
 
 			if rawAttrMatcher == nil {
 				// <script async src="https://example.com/asset?shop="quoteful.example.com"></script>

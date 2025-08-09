@@ -515,6 +515,162 @@ func TestReaderTagAttrSpaceQuoted(t *testing.T) {
 	}
 }
 
+func TestReaderTagAttrSpaceUnquoted(t *testing.T) {
+	document, documentOffsets, err := Parse(strings.NewReader("<html><body><p title =unquoted>hello</p></body></html>"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	visitNode(document, func(n *html.Node) {
+		if n.DataAtom != atom.P {
+			return
+		}
+
+		np, ok := documentOffsets.GetNodeMetadata(n)
+		if !ok {
+			t.Fatal("expected metadata")
+		} else if _a, _e := len(np.TagAttr), 1; _a != _e {
+			t.Errorf("tag attr count: expected %v, got %v", _e, _a)
+		} else if _a, _e := np.TagAttr[0].KeyOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       15,
+				LineColumn: cursorio.TextLineColumn{0, 15},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       20,
+				LineColumn: cursorio.TextLineColumn{0, 20},
+			},
+		}); _a != _e {
+			t.Errorf("tag attr key: expected %v, got %v", _e, _a)
+		} else if np.TagAttr[0].ValueOffsets == nil {
+			t.Errorf("tag attr value: expected non-nil, got nil")
+		} else if _a, _e := np.TagAttr[0].ValueOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       22,
+				LineColumn: cursorio.TextLineColumn{0, 22},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       30,
+				LineColumn: cursorio.TextLineColumn{0, 30},
+			},
+		}); *_a != _e {
+			t.Errorf("tag attr value: expected %v, got %v", _e, _a)
+		}
+	})
+
+	var rendered = &bytes.Buffer{}
+	err = html.Render(rendered, document)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	} else if _a, _e := rendered.String(), "<html><head></head><body><p title=\"unquoted\">hello</p></body></html>"; _a != _e {
+		t.Errorf("rendered: expected %v, got %v", _e, _a)
+	}
+}
+
+func TestReaderTagAttrSpaceSpaceQuoted(t *testing.T) {
+	document, documentOffsets, err := Parse(strings.NewReader("<html><body><p title = \"quoted\">hello</p></body></html>"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	visitNode(document, func(n *html.Node) {
+		if n.DataAtom != atom.P {
+			return
+		}
+
+		np, ok := documentOffsets.GetNodeMetadata(n)
+		if !ok {
+			t.Fatal("expected metadata")
+		} else if _a, _e := len(np.TagAttr), 1; _a != _e {
+			t.Errorf("tag attr count: expected %v, got %v", _e, _a)
+		} else if _a, _e := np.TagAttr[0].KeyOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       15,
+				LineColumn: cursorio.TextLineColumn{0, 15},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       20,
+				LineColumn: cursorio.TextLineColumn{0, 20},
+			},
+		}); _a != _e {
+			t.Errorf("tag attr key: expected %v, got %v", _e, _a)
+		} else if np.TagAttr[0].ValueOffsets == nil {
+			t.Errorf("tag attr value: expected non-nil, got nil")
+		} else if _a, _e := np.TagAttr[0].ValueOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       23,
+				LineColumn: cursorio.TextLineColumn{0, 23},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       31,
+				LineColumn: cursorio.TextLineColumn{0, 31},
+			},
+		}); *_a != _e {
+			t.Errorf("tag attr value: expected %v, got %v", _e, _a)
+		}
+	})
+
+	var rendered = &bytes.Buffer{}
+	err = html.Render(rendered, document)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	} else if _a, _e := rendered.String(), "<html><head></head><body><p title=\"quoted\">hello</p></body></html>"; _a != _e {
+		t.Errorf("rendered: expected %v, got %v", _e, _a)
+	}
+}
+
+func TestReaderTagAttrSpaceSpaceUnquoted(t *testing.T) {
+	document, documentOffsets, err := Parse(strings.NewReader("<html><body><p title = unquoted>hello</p></body></html>"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	visitNode(document, func(n *html.Node) {
+		if n.DataAtom != atom.P {
+			return
+		}
+
+		np, ok := documentOffsets.GetNodeMetadata(n)
+		if !ok {
+			t.Fatal("expected metadata")
+		} else if _a, _e := len(np.TagAttr), 1; _a != _e {
+			t.Errorf("tag attr count: expected %v, got %v", _e, _a)
+		} else if _a, _e := np.TagAttr[0].KeyOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       15,
+				LineColumn: cursorio.TextLineColumn{0, 15},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       20,
+				LineColumn: cursorio.TextLineColumn{0, 20},
+			},
+		}); _a != _e {
+			t.Errorf("tag attr key: expected %v, got %v", _e, _a)
+		} else if np.TagAttr[0].ValueOffsets == nil {
+			t.Errorf("tag attr value: expected non-nil, got nil")
+		} else if _a, _e := np.TagAttr[0].ValueOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       23,
+				LineColumn: cursorio.TextLineColumn{0, 23},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       31,
+				LineColumn: cursorio.TextLineColumn{0, 31},
+			},
+		}); *_a != _e {
+			t.Errorf("tag attr value: expected %v, got %v", _e, _a)
+		}
+	})
+
+	var rendered = &bytes.Buffer{}
+	err = html.Render(rendered, document)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	} else if _a, _e := rendered.String(), "<html><head></head><body><p title=\"unquoted\">hello</p></body></html>"; _a != _e {
+		t.Errorf("rendered: expected %v, got %v", _e, _a)
+	}
+}
+
 func TestReaderTagClosedByParent(t *testing.T) {
 	document, documentOffsets, err := Parse(strings.NewReader("<html><body><p>hello</body></html>"))
 	if err != nil {
