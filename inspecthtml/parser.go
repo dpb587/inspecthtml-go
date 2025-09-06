@@ -16,10 +16,9 @@ type Parser struct {
 	r       *parserReader
 	rActual io.Reader
 
-	parseRoot       *html.Node
-	parseErr        error
-	offsets         *ParseMetadata
-	deferredRebuild []func()
+	parseRoot *html.Node
+	parseErr  error
+	offsets   *ParseMetadata
 }
 
 func NewParser(r io.Reader, opts ...ParserOption) *Parser {
@@ -82,12 +81,6 @@ func (p *Parser) rebuild(root *html.Node) {
 	}
 
 	p.rebuildNode(root)
-
-	for _, fn := range p.deferredRebuild {
-		fn()
-	}
-
-	p.deferredRebuild = nil
 }
 
 func (p *Parser) rebuildNode(n *html.Node) {
@@ -122,14 +115,15 @@ func (p *Parser) rebuildNode(n *html.Node) {
 
 		return
 	case html.CommentNode:
-		if n.Data[0] == 'c' {
+		switch n.Data[0] {
+		case 'c':
 			pnt := p.r.nodeSwapByKey[n.Data[1:]]
 			n.Data = pnt.original
 
 			p.offsets.metadataByNode[n] = &NodeMetadata{
 				TokenOffsets: pnt.offsetRange,
 			}
-		} else if n.Data[0] == 't' {
+		case 't':
 			pnt := p.r.nodeSwapByKey[n.Data[1:]]
 			n.Type = html.TextNode
 			n.Data = pnt.original
@@ -137,10 +131,20 @@ func (p *Parser) rebuildNode(n *html.Node) {
 			p.offsets.metadataByNode[n] = &NodeMetadata{
 				TokenOffsets: pnt.offsetRange,
 			}
-		} else {
-			// this should never error given the assumed deterministic tree
-			v, _ := cursorio.ParseTextOffsetRange(n.Data)
-			p.offsets.metadataByNode[n.PrevSibling].EndTagTokenOffsets = &v
+		default:
+			if p.offsets.metadataByNode[n.PrevSibling] != nil {
+				// if it was already set, html parser must have reordered nodes
+				// first encountered offset should be most accurate
+				if p.offsets.metadataByNode[n.PrevSibling].EndTagTokenOffsets == nil {
+					// this should never error given the assumed deterministic tree
+					v, _ := cursorio.ParseTextOffsetRange(n.Data)
+
+					p.offsets.metadataByNode[n.PrevSibling].EndTagTokenOffsets = &v
+				}
+			} else {
+				// missing meta; html parser must have injected/restarted a previously open tag
+				// rather than fake TokenOffsets + TagNameOffsets, drop the metadata
+			}
 
 			if n.NextSibling != nil {
 				n.NextSibling.PrevSibling = n.PrevSibling
@@ -163,38 +167,5 @@ func (p *Parser) rebuildNode(n *html.Node) {
 
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
 		p.rebuildNode(c)
-	}
-
-	if n.Type == html.ElementNode && p.offsets.metadataByNode[n] != nil {
-		if p.offsets.metadataByNode[n].TagSelfClosing {
-			// nothing to do
-		} else if p.offsets.metadataByNode[n].EndTagTokenOffsets == nil {
-			if n.LastChild != nil {
-				if p.offsets.metadataByNode[n.LastChild] != nil {
-					p.offsets.metadataByNode[n].EndTagTokenOffsets = &cursorio.TextOffsetRange{
-						From:  p.offsets.metadataByNode[n.LastChild].TokenOffsets.Until,
-						Until: p.offsets.metadataByNode[n.LastChild].TokenOffsets.Until,
-					}
-				}
-			} else {
-				p.deferredRebuild = append(p.deferredRebuild, func() {
-					if n.NextSibling != nil {
-						if p.offsets.metadataByNode[n.NextSibling] != nil {
-							p.offsets.metadataByNode[n].EndTagTokenOffsets = &cursorio.TextOffsetRange{
-								From:  p.offsets.metadataByNode[n.NextSibling].TokenOffsets.From,
-								Until: p.offsets.metadataByNode[n.NextSibling].TokenOffsets.From,
-							}
-						}
-					} else if n.Parent != nil {
-						if p.offsets.metadataByNode[n.Parent] != nil {
-							p.offsets.metadataByNode[n].EndTagTokenOffsets = &cursorio.TextOffsetRange{
-								From:  p.offsets.metadataByNode[n.Parent].EndTagTokenOffsets.From,
-								Until: p.offsets.metadataByNode[n.Parent].EndTagTokenOffsets.From,
-							}
-						}
-					}
-				})
-			}
-		}
 	}
 }

@@ -1374,6 +1374,167 @@ func TestReaderTextReparentedMerged(t *testing.T) {
 	}
 }
 
+func dumpTraversal(n *html.Node) string {
+	if n == nil {
+		return "/"
+	}
+
+	return dumpTraversal(n.Parent) + "/" + n.Data
+}
+
+func TestTokenizerElementInterrupt(t *testing.T) {
+	document, documentOffsets, err := Parse(strings.NewReader("<html><body><p><custom-element><ul><li>hello</li></ul></custom-element></p></body></html>"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expectedNodeMetadataListIdx := -1
+	expectedNodeMetadataList := []*NodeMetadata{
+		nil, // Document
+		{ // html
+			TokenOffsets: cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 0, LineColumn: cursorio.TextLineColumn{0, 0}},
+				Until: cursorio.TextOffset{Byte: 6, LineColumn: cursorio.TextLineColumn{0, 6}},
+			},
+			TagNameOffsets: &cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 1, LineColumn: cursorio.TextLineColumn{0, 1}},
+				Until: cursorio.TextOffset{Byte: 5, LineColumn: cursorio.TextLineColumn{0, 5}},
+			},
+			EndTagTokenOffsets: &cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 82, LineColumn: cursorio.TextLineColumn{0, 82}},
+				Until: cursorio.TextOffset{Byte: 89, LineColumn: cursorio.TextLineColumn{0, 89}},
+			},
+		},
+		nil, // injected <head />
+		{ // body
+			TokenOffsets: cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 6, LineColumn: cursorio.TextLineColumn{0, 6}},
+				Until: cursorio.TextOffset{Byte: 12, LineColumn: cursorio.TextLineColumn{0, 12}},
+			},
+			TagNameOffsets: &cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 7, LineColumn: cursorio.TextLineColumn{0, 7}},
+				Until: cursorio.TextOffset{Byte: 11, LineColumn: cursorio.TextLineColumn{0, 11}},
+			},
+			EndTagTokenOffsets: &cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 75, LineColumn: cursorio.TextLineColumn{0, 75}},
+				Until: cursorio.TextOffset{Byte: 82, LineColumn: cursorio.TextLineColumn{0, 82}},
+			},
+		},
+		{ // p
+			TokenOffsets: cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 12, LineColumn: cursorio.TextLineColumn{0, 12}},
+				Until: cursorio.TextOffset{Byte: 15, LineColumn: cursorio.TextLineColumn{0, 15}},
+			},
+			TagNameOffsets: &cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 13, LineColumn: cursorio.TextLineColumn{0, 13}},
+				Until: cursorio.TextOffset{Byte: 14, LineColumn: cursorio.TextLineColumn{0, 14}},
+			},
+			// interrupted; end tag inferred based on effective last child
+			EndTagTokenOffsets: &cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 31, LineColumn: cursorio.TextLineColumn{0, 31}},
+				Until: cursorio.TextOffset{Byte: 31, LineColumn: cursorio.TextLineColumn{0, 31}},
+			},
+		},
+		{ // custom-element
+			TokenOffsets: cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 15, LineColumn: cursorio.TextLineColumn{0, 15}},
+				Until: cursorio.TextOffset{Byte: 31, LineColumn: cursorio.TextLineColumn{0, 31}},
+			},
+			TagNameOffsets: &cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 16, LineColumn: cursorio.TextLineColumn{0, 16}},
+				Until: cursorio.TextOffset{Byte: 30, LineColumn: cursorio.TextLineColumn{0, 30}},
+			},
+			// tokenizer closed custom-element early
+			EndTagTokenOffsets: &cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 31, LineColumn: cursorio.TextLineColumn{0, 31}},
+				Until: cursorio.TextOffset{Byte: 31, LineColumn: cursorio.TextLineColumn{0, 31}},
+			},
+		},
+		{ // ul
+			TokenOffsets: cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 31, LineColumn: cursorio.TextLineColumn{0, 31}},
+				Until: cursorio.TextOffset{Byte: 35, LineColumn: cursorio.TextLineColumn{0, 35}},
+			},
+			TagNameOffsets: &cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 32, LineColumn: cursorio.TextLineColumn{0, 32}},
+				Until: cursorio.TextOffset{Byte: 34, LineColumn: cursorio.TextLineColumn{0, 34}},
+			},
+			EndTagTokenOffsets: &cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 49, LineColumn: cursorio.TextLineColumn{0, 49}},
+				Until: cursorio.TextOffset{Byte: 54, LineColumn: cursorio.TextLineColumn{0, 54}},
+			},
+		},
+		{ // li
+			TokenOffsets: cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 35, LineColumn: cursorio.TextLineColumn{0, 35}},
+				Until: cursorio.TextOffset{Byte: 39, LineColumn: cursorio.TextLineColumn{0, 39}},
+			},
+			TagNameOffsets: &cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 36, LineColumn: cursorio.TextLineColumn{0, 36}},
+				Until: cursorio.TextOffset{Byte: 38, LineColumn: cursorio.TextLineColumn{0, 38}},
+			},
+			EndTagTokenOffsets: &cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 44, LineColumn: cursorio.TextLineColumn{0, 44}},
+				Until: cursorio.TextOffset{Byte: 49, LineColumn: cursorio.TextLineColumn{0, 49}},
+			},
+		},
+		{ // text
+			TokenOffsets: cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 39, LineColumn: cursorio.TextLineColumn{0, 39}},
+				Until: cursorio.TextOffset{Byte: 44, LineColumn: cursorio.TextLineColumn{0, 44}},
+			},
+		},
+		nil, // p (interrupted)
+	}
+
+	visitNode(document, func(n *html.Node) {
+		expectedNodeMetadataListIdx++
+		expectedNodeMetadata := expectedNodeMetadataList[expectedNodeMetadataListIdx]
+
+		np, _ := documentOffsets.GetNodeMetadata(n)
+
+		if np == expectedNodeMetadata {
+			return
+		} else if np == nil {
+			t.Fatalf("%s: unexpected nil", dumpTraversal(n))
+		} else if expectedNodeMetadata == nil {
+			t.Fatalf("%s: unexpected nil", dumpTraversal(n))
+		}
+
+		if _a, _e := np.TokenOffsets.String(), expectedNodeMetadata.TokenOffsets.String(); _a != _e {
+			t.Fatalf("%s: TokenOffsets: expected %v, got %v", dumpTraversal(n), _e, _a)
+		}
+
+		if np.TagNameOffsets != nil || expectedNodeMetadata.TagNameOffsets != nil {
+			if np.TagNameOffsets == nil {
+				t.Fatalf("%s: TagNameOffsets: expected %v, got nil", dumpTraversal(n), expectedNodeMetadata.TagNameOffsets.String())
+			} else if expectedNodeMetadata.TagNameOffsets == nil {
+				t.Fatalf("%s: TagNameOffsets: expected nil, got %v", dumpTraversal(n), np.TagNameOffsets.String())
+			} else if _a, _e := np.TagNameOffsets.String(), expectedNodeMetadata.TagNameOffsets.String(); _a != _e {
+				t.Fatalf("%s: TagNameOffsets: expected %v, got %v", dumpTraversal(n), _e, _a)
+			}
+		}
+
+		if np.EndTagTokenOffsets != nil || expectedNodeMetadata.EndTagTokenOffsets != nil {
+			if np.EndTagTokenOffsets == nil {
+				t.Fatalf("%s: EndTagTokenOffsets: expected nil, got %v", dumpTraversal(n), np.EndTagTokenOffsets.String())
+			} else if expectedNodeMetadata.EndTagTokenOffsets == nil {
+				t.Fatalf("%s: EndTagTokenOffsets: expected nil, got %v", dumpTraversal(n), np.EndTagTokenOffsets.String())
+			} else if _a, _e := np.EndTagTokenOffsets.String(), expectedNodeMetadata.EndTagTokenOffsets.String(); _a != _e {
+				t.Fatalf("%s: EndTagTokenOffsets: expected %v, got %v", dumpTraversal(n), _e, _a)
+			}
+		}
+	})
+
+	var rendered = &bytes.Buffer{}
+	err = html.Render(rendered, document)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	} else if _a, _e := rendered.String(), "<html><head></head><body><p><custom-element></custom-element></p><ul><li>hello</li></ul><p></p></body></html>"; _a != _e {
+		t.Errorf("rendered: expected %v, got %v", _e, _a)
+	}
+}
+
 func TestReaderLessTrivialBug(t *testing.T) {
 	document, _, err := Parse(strings.NewReader(`<address itemscope itemtype="http://microformats.org/profile/hcard">
  <strong itemprop="fn"><span itemprop="n" itemscope><span itemprop="given-name">Alfred</span>
