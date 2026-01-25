@@ -92,7 +92,7 @@ func TestReaderTag(t *testing.T) {
 				Byte:       20,
 				LineColumn: cursorio.TextLineColumn{0, 20},
 			},
-		}); _a != _e {
+		}); _a == nil || *_a != _e {
 			t.Errorf("inner: expected %v, got %v", _e, _a)
 		}
 	})
@@ -727,7 +727,7 @@ func TestReaderTagClosedByParent(t *testing.T) {
 				Byte:       20,
 				LineColumn: cursorio.TextLineColumn{0, 20},
 			},
-		}); _a != _e {
+		}); _a == nil || *_a != _e {
 			t.Errorf("inner: expected %v, got %v", _e, _a)
 		}
 	})
@@ -797,7 +797,7 @@ func TestReaderTagClosedBySibling(t *testing.T) {
 				Byte:       25,
 				LineColumn: cursorio.TextLineColumn{0, 25},
 			},
-		}); _a != _e {
+		}); _a == nil || *_a != _e {
 			t.Errorf("inner: expected %v, got %v", _e, _a)
 		}
 	})
@@ -867,7 +867,7 @@ func TestReaderTagEmptyClosedByParent(t *testing.T) {
 				Byte:       15,
 				LineColumn: cursorio.TextLineColumn{0, 15},
 			},
-		}); _a != _e {
+		}); _a == nil || *_a != _e {
 			t.Errorf("inner: expected %v, got %v", _e, _a)
 		}
 	})
@@ -937,7 +937,7 @@ func TestReaderTagEmptyClosedBySibling(t *testing.T) {
 				Byte:       20,
 				LineColumn: cursorio.TextLineColumn{0, 20},
 			},
-		}); _a != _e {
+		}); _a == nil || *_a != _e {
 			t.Errorf("inner: expected %v, got %v", _e, _a)
 		}
 	})

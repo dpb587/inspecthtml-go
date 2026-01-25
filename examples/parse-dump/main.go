@@ -60,8 +60,8 @@ func dumpNode(metadata *inspecthtml.ParseMetadata, node *html.Node, indent strin
 				nodeMetadata.GetOuterOffsets().OffsetRangeString(),
 			)
 
-			if nodeMetadata.EndTagTokenOffsets != nil {
-				fmt.Fprintf(os.Stdout, " InnerOffsets=%s", nodeMetadata.GetInnerOffsets().OffsetRangeString())
+			if inner := nodeMetadata.GetInnerOffsets(); inner != nil {
+				fmt.Fprintf(os.Stdout, " InnerOffsets=%s", inner.OffsetRangeString())
 			}
 
 			fmt.Fprintf(os.Stdout, "\n")

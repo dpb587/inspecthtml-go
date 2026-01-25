@@ -29,13 +29,12 @@ func (n NodeMetadata) HasInner() bool {
 	return n.EndTagTokenOffsets != nil
 }
 
-func (n NodeMetadata) GetInnerOffsets() cursorio.TextOffsetRange {
+func (n NodeMetadata) GetInnerOffsets() *cursorio.TextOffsetRange {
 	if n.EndTagTokenOffsets == nil {
-		// caller should know the type of offsets they're looking for
-		panic("inspecthtml: cannot get inner offset range of a node based on a non-tag or self-closing tag")
+		return nil
 	}
 
-	return cursorio.TextOffsetRange{
+	return &cursorio.TextOffsetRange{
 		From:  n.TokenOffsets.Until,
 		Until: n.EndTagTokenOffsets.From,
 	}
