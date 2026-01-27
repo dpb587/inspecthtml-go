@@ -34,7 +34,7 @@ Some sample use cases and starter snippets can be found in the [`examples` direc
           hello
         // EndTagToken=L1C34:L1C43;0x21:0x2a
         </strong>
-        // StartTagToken=L1C43:L1C62;0x2a:0x3d OuterOffsets=L1C43:L1C62;0x2a:0x3d
+        // StartTagToken=L1C43:L1C62;0x2a:0x3d OuterOffsets=L1C43:L1C62;0x2a:0x3d SelfClosing
         <br
           // Attr KeyOffsets=L1C47:L1C59;0x2e:0x3a
           data-example=""
