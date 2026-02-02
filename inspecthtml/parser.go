@@ -148,11 +148,15 @@ func (p *Parser) rebuildNode(n *html.Node) {
 
 			if n.NextSibling != nil {
 				n.NextSibling.PrevSibling = n.PrevSibling
-			} else {
+			} else if n.Parent != nil {
 				n.Parent.LastChild = n.PrevSibling
 			}
 
-			n.PrevSibling.NextSibling = n.NextSibling
+			if n.PrevSibling != nil {
+				n.PrevSibling.NextSibling = n.NextSibling
+			} else if n.Parent != nil {
+				n.Parent.FirstChild = n.NextSibling
+			}
 		}
 
 		return
