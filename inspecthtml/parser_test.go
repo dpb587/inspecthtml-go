@@ -1374,6 +1374,69 @@ func TestReaderTextReparentedMerged(t *testing.T) {
 	}
 }
 
+func TestReaderUnopenedRootBug(t *testing.T) {
+	document, _, err := Parse(strings.NewReader("</p>"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var rendered = &bytes.Buffer{}
+	err = html.Render(rendered, document)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	} else if _a, _e := rendered.String(), "<html><head></head><body></body></html>"; _a != _e {
+		t.Errorf("rendered: expected %v, got %v", _e, _a)
+	}
+}
+
+func TestReaderUnopenedGenericTagBug(t *testing.T) {
+	document, documentOffsets, err := Parse(strings.NewReader("<html><body></nav>hello</body></html>"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	visitNode(document, func(n *html.Node) {
+		if n.Type != html.TextNode {
+			return
+		}
+
+		np, ok := documentOffsets.GetNodeMetadata(n)
+		if !ok {
+			t.Fatal("expected metadata")
+		} else if _a, _e := np.TokenOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       18,
+				LineColumn: cursorio.TextLineColumn{0, 18},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       23,
+				LineColumn: cursorio.TextLineColumn{0, 23},
+			},
+		}); _a != _e {
+			t.Errorf("token: expected %v, got %v", _e, _a)
+		} else if _a, _e := np.GetOuterOffsets(), (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       18,
+				LineColumn: cursorio.TextLineColumn{0, 18},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       23,
+				LineColumn: cursorio.TextLineColumn{0, 23},
+			},
+		}); _a != _e {
+			t.Errorf("outer: expected %v, got %v", _e, _a)
+		}
+	})
+
+	var rendered = &bytes.Buffer{}
+	err = html.Render(rendered, document)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	} else if _a, _e := rendered.String(), "<html><head></head><body>hello</body></html>"; _a != _e {
+		t.Errorf("rendered: expected %v, got %v", _e, _a)
+	}
+}
+
 func dumpTraversal(n *html.Node) string {
 	if n == nil {
 		return "/"
