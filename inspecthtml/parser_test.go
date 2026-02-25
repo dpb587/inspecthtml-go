@@ -1921,3 +1921,130 @@ func TestParserInjectedElementWithAttributes(t *testing.T) {
 		t.Fatalf("rendered: expected %q, got %q", _e, _a)
 	}
 }
+
+func TestReaderTagAttrNoSpaceBetween(t *testing.T) {
+	// Regression test: attributes without spaces between them (malformed HTML)
+	// E.g., class="x"href="y" instead of class="x" href="y"
+	// This was causing panic: index out of range [N] with length N
+	// because TagAttr slice length didn't match node.Attr length
+	document, documentOffsets, err := Parse(strings.NewReader(`<html><body><a class="x"href="y"data="z">link</a></body></html>`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	visitNode(document, func(n *html.Node) {
+		if n.DataAtom != atom.A {
+			return
+		}
+
+		// Must not panic when accessing attributes
+		if len(n.Attr) != 3 {
+			t.Fatalf("expected 3 attributes, got %d", len(n.Attr))
+		}
+
+		np, ok := documentOffsets.GetNodeMetadata(n)
+		if !ok {
+			t.Fatal("expected metadata")
+		}
+
+		// TagAttr length must always match Attr length, even if some entries are nil
+		if _a, _e := len(np.TagAttr), 3; _a != _e {
+			t.Fatalf("TagAttr length (%d) must match Attr length (%d)", _a, _e)
+		}
+
+		// Attribute 0: class="x"
+		if np.TagAttr[0] == nil {
+			t.Fatal("attribute 0 (class) has nil metadata")
+		} else if _a, _e := np.TagAttr[0].KeyOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       15,
+				LineColumn: cursorio.TextLineColumn{0, 15},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       20,
+				LineColumn: cursorio.TextLineColumn{0, 20},
+			},
+		}); _a != _e {
+			t.Fatalf("attr 0 key: expected %v, got %v", _e, _a)
+		} else if np.TagAttr[0].ValueOffsets == nil {
+			t.Fatalf("attr 0 value: expected non-nil, got nil")
+		} else if _a, _e := np.TagAttr[0].ValueOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       21,
+				LineColumn: cursorio.TextLineColumn{0, 21},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       24,
+				LineColumn: cursorio.TextLineColumn{0, 24},
+			},
+		}); *_a != _e {
+			t.Fatalf("attr 0 value: expected %v, got %v", _e, _a)
+		}
+
+		// Attribute 1: href="y"
+		if np.TagAttr[1] == nil {
+			t.Fatal("attribute 1 (href) has nil metadata")
+		} else if _a, _e := np.TagAttr[1].KeyOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       24,
+				LineColumn: cursorio.TextLineColumn{0, 24},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       28,
+				LineColumn: cursorio.TextLineColumn{0, 28},
+			},
+		}); _a != _e {
+			t.Fatalf("attr 1 key: expected %v, got %v", _e, _a)
+		} else if np.TagAttr[1].ValueOffsets == nil {
+			t.Fatalf("attr 1 value: expected non-nil, got nil")
+		} else if _a, _e := np.TagAttr[1].ValueOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       29,
+				LineColumn: cursorio.TextLineColumn{0, 29},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       32,
+				LineColumn: cursorio.TextLineColumn{0, 32},
+			},
+		}); *_a != _e {
+			t.Fatalf("attr 1 value: expected %v, got %v", _e, _a)
+		}
+
+		// Attribute 2: data="z"
+		if np.TagAttr[2] == nil {
+			t.Fatal("attribute 2 (data) has nil metadata")
+		} else if _a, _e := np.TagAttr[2].KeyOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       32,
+				LineColumn: cursorio.TextLineColumn{0, 32},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       36,
+				LineColumn: cursorio.TextLineColumn{0, 36},
+			},
+		}); _a != _e {
+			t.Fatalf("attr 2 key: expected %v, got %v", _e, _a)
+		} else if np.TagAttr[2].ValueOffsets == nil {
+			t.Fatalf("attr 2 value: expected non-nil, got nil")
+		} else if _a, _e := np.TagAttr[2].ValueOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       37,
+				LineColumn: cursorio.TextLineColumn{0, 37},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       40,
+				LineColumn: cursorio.TextLineColumn{0, 40},
+			},
+		}); *_a != _e {
+			t.Fatalf("attr 2 value: expected %v, got %v", _e, _a)
+		}
+	})
+
+	var rendered = &bytes.Buffer{}
+	err = html.Render(rendered, document)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	} else if _a, _e := rendered.String(), "<html><head></head><body><a class=\"x\" href=\"y\" data=\"z\">link</a></body></html>"; _a != _e {
+		t.Fatalf("rendered: expected %v, got %v", _e, _a)
+	}
+}

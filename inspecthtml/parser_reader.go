@@ -16,7 +16,7 @@ var emptyQuotes = []byte(`""`)
 var equalEmptyQuotes = []byte(`=""`)
 
 var reTagName = regexp.MustCompile(`^<([^\s/<>]+)`)
-var reAttrKeyValue = regexp.MustCompile(`.*?[\s<>]+([^=\s/<>]+)((\s*=\s*)(.))?`)
+var reAttrKeyValue = regexp.MustCompile(`.*?[\s<>]*([^=\s/<>]+)((\s*=\s*)(.))?`)
 var reAttrValueDoubleQuote = regexp.MustCompile(`.*?"`)
 var reAttrValueSingleQuote = regexp.MustCompile(`.*?'`)
 var reAttrValueUnquoted = regexp.MustCompile(`[^\s/>]+`)
@@ -158,7 +158,7 @@ func (r *parserReader) next() error {
 					}
 				} else if len(attrValue) > 0 {
 					// an edge case worth fixing; almost panic-worthy; subsequent attributes may no longer be correct
-					fmt.Fprintf(os.Stderr, "inspecthtml: regex attr failed (raw=%q, key=%q, val=%q)", string(rawCutset), string(attrKey), string(attrValue))
+					fmt.Fprintf(os.Stderr, "inspecthtml: regex attr failed (raw=%q, key=%q, val=%q)\n", string(rawCutset), string(attrKey), string(attrValue))
 				} else {
 					rawCutset = rawCutset[rawAttrMatcher[3]:]
 					lastAttrSuffix = equalEmptyQuotes
