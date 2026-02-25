@@ -1796,3 +1796,128 @@ func TestShortMalformedComments(t *testing.T) {
 		})
 	}
 }
+
+func TestParserInjectedElementWithAttributes(t *testing.T) {
+	// Regression test: HTML parser injects/restarts elements when encountering malformed markup
+	// Previously this caused a panic because the injected element had attributes but was
+	// not tracked in nodeTagByKey, resulting in a nil value being stored in metadataByNode.
+	// With improved regex patterns, we now correctly track the malformed tag's offsets.
+	document, documentOffsets, err := Parse(strings.NewReader(`<html><body><div>content</div><body</div></body></html>`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify we can traverse the tree without panicking
+	var foundDivCount, foundBodyCount, foundBodyMalformedCount int
+	visitNode(document, func(n *html.Node) {
+		// Getting metadata should not panic even for injected elements
+		_, _ = documentOffsets.GetNodeMetadata(n)
+
+		if n.Type == html.ElementNode {
+			switch n.DataAtom {
+			case atom.Html:
+				np, ok := documentOffsets.GetNodeMetadata(n)
+				if !ok {
+					t.Fatal("expected metadata for html element")
+				}
+				if _a, _e := np.TokenOffsets, (cursorio.TextOffsetRange{
+					From: cursorio.TextOffset{
+						Byte:       0,
+						LineColumn: cursorio.TextLineColumn{0, 0},
+					},
+					Until: cursorio.TextOffset{
+						Byte:       6,
+						LineColumn: cursorio.TextLineColumn{0, 6},
+					},
+				}); _a != _e {
+					t.Fatalf("html TokenOffsets: expected %v, got %v", _e, _a)
+				}
+
+			case atom.Div:
+				foundDivCount++
+				np, ok := documentOffsets.GetNodeMetadata(n)
+				if !ok {
+					t.Fatal("expected metadata for div element")
+				}
+				if _a, _e := np.TokenOffsets, (cursorio.TextOffsetRange{
+					From: cursorio.TextOffset{
+						Byte:       12,
+						LineColumn: cursorio.TextLineColumn{0, 12},
+					},
+					Until: cursorio.TextOffset{
+						Byte:       17,
+						LineColumn: cursorio.TextLineColumn{0, 17},
+					},
+				}); _a != _e {
+					t.Fatalf("div TokenOffsets: expected %v, got %v", _e, _a)
+				}
+
+			case atom.Body:
+				foundBodyCount++
+				// Well-formed body element
+				np, ok := documentOffsets.GetNodeMetadata(n)
+				if !ok {
+					t.Fatal("expected metadata for body element")
+				}
+				if _a, _e := np.TokenOffsets, (cursorio.TextOffsetRange{
+					From: cursorio.TextOffset{
+						Byte:       6,
+						LineColumn: cursorio.TextLineColumn{0, 6},
+					},
+					Until: cursorio.TextOffset{
+						Byte:       12,
+						LineColumn: cursorio.TextLineColumn{0, 12},
+					},
+				}); _a != _e {
+					t.Fatalf("body TokenOffsets: expected %v, got %v", _e, _a)
+				}
+
+			default:
+				// Check for malformed body< element (parsed as element with name "body<")
+				if n.Data == "body<" {
+					foundBodyMalformedCount++
+					// Malformed <body< tag - now properly tracked with improved regex
+					np, ok := documentOffsets.GetNodeMetadata(n)
+					if !ok {
+						t.Fatal("expected metadata for malformed body< element")
+					}
+					if _a, _e := np.TokenOffsets, (cursorio.TextOffsetRange{
+						From: cursorio.TextOffset{
+							Byte:       30,
+							LineColumn: cursorio.TextLineColumn{0, 30},
+						},
+						Until: cursorio.TextOffset{
+							Byte:       41,
+							LineColumn: cursorio.TextLineColumn{0, 41},
+						},
+					}); _a != _e {
+						t.Fatalf("body< TokenOffsets: expected %v, got %v", _e, _a)
+					}
+				}
+			}
+		}
+	})
+
+	// The malformed <body tag causes parser to handle things strangely, but should not panic
+	if foundDivCount != 1 {
+		t.Fatalf("expected exactly 1 div element, got %d", foundDivCount)
+	} else if foundBodyCount != 1 {
+		t.Fatalf("expected exactly 1 well-formed body element, got %d", foundBodyCount)
+	} else if foundBodyMalformedCount != 1 {
+		t.Fatalf("expected exactly 1 malformed body< element, got %d", foundBodyMalformedCount)
+	}
+
+	// Most importantly, verify rendering doesn't panic
+	var rendered = &bytes.Buffer{}
+	err = html.Render(rendered, document)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Check the full rendered output matches expected
+	// The malformed <body tag results in spurious attributes from HTML parser error recovery
+	expectedOutput := `<html><head></head><body><div>content</div><body< div=""></body<></body></html>`
+	if _a, _e := rendered.String(), expectedOutput; _a != _e {
+		t.Fatalf("rendered: expected %q, got %q", _e, _a)
+	}
+}

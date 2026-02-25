@@ -165,8 +165,12 @@ func (p *Parser) rebuildNode(n *html.Node) {
 			break
 		}
 
-		p.offsets.metadataByNode[n] = p.r.nodeTagByKey[n.Attr[len(n.Attr)-1].Val]
-		n.Attr = n.Attr[:len(n.Attr)-1]
+		if lastAttr := n.Attr[len(n.Attr)-1]; lastAttr.Key == "o" {
+			if metadata := p.r.nodeTagByKey[lastAttr.Val]; metadata != nil {
+				p.offsets.metadataByNode[n] = metadata
+				n.Attr = n.Attr[:len(n.Attr)-1]
+			}
+		}
 	}
 
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
