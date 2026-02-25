@@ -130,8 +130,8 @@ func (r *parserReader) next() error {
 						}
 
 						lastAttrSuffix = nil
-					} else if !unicode.IsSpace(rune(rawCutset[0])) {
-						closeMatcher := regexp.MustCompile(`[^\s]+`).FindSubmatchIndex(rawCutset[1:])
+					} else if !unicode.IsSpace(rune(rawCutset[0])) && rawCutset[0] != '>' && rawCutset[0] != '/' {
+						closeMatcher := regexp.MustCompile(`[^\s/>]+`).FindSubmatchIndex(rawCutset)
 
 						if closeMatcher == nil {
 							// weird
