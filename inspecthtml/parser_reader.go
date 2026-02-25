@@ -203,8 +203,19 @@ func (r *parserReader) next() error {
 	case html.CommentToken:
 		r.nodeIdx++
 		nodeKey := strconv.FormatInt(r.nodeIdx, 10)
+
+		var commentContent string
+
+		if len(raw) >= 7 {
+			// <!--content-->
+			commentContent = string(raw)[4 : len(raw)-3]
+		} else if len(raw) > 4 {
+			// malformed; but tokenizer recovered; e.g. <!--content
+			commentContent = string(raw)[4:]
+		}
+
 		r.nodeSwapByKey[nodeKey] = parserNodeSwap{
-			original:    string(raw)[4 : len(raw)-3],
+			original:    commentContent,
 			offsetRange: r.doc.WriteForOffsetRange(raw),
 		}
 

@@ -1710,3 +1710,89 @@ func TestReaderLessTrivialBug(t *testing.T) {
 		t.Errorf("rendered: expected %v, got %v", _e, _a)
 	}
 }
+
+func TestShortMalformedComments(t *testing.T) {
+	// Regression test for slice bounds out of range error with short/malformed comments
+	testCases := []struct {
+		name           string
+		input          string
+		expected       string
+		expectedOffset cursorio.TextOffsetRange
+	}{
+		{
+			"empty comment",
+			"<!---->",
+			"<!----><html><head></head><body></body></html>",
+			cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 0, LineColumn: cursorio.TextLineColumn{0, 0}},
+				Until: cursorio.TextOffset{Byte: 7, LineColumn: cursorio.TextLineColumn{0, 7}},
+			},
+		},
+		{
+			"short malformed comment 1",
+			"<!-->",
+			"<!--&gt;--><html><head></head><body></body></html>",
+			cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 0, LineColumn: cursorio.TextLineColumn{0, 0}},
+				Until: cursorio.TextOffset{Byte: 5, LineColumn: cursorio.TextLineColumn{0, 5}},
+			},
+		},
+		{
+			"short malformed comment 2",
+			"<!--->",
+			"<!---&gt;--><html><head></head><body></body></html>",
+			cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 0, LineColumn: cursorio.TextLineColumn{0, 0}},
+				Until: cursorio.TextOffset{Byte: 6, LineColumn: cursorio.TextLineColumn{0, 6}},
+			},
+		},
+		{
+			"comment with content",
+			"<!-- comment -->",
+			"<!-- comment --><html><head></head><body></body></html>",
+			cursorio.TextOffsetRange{
+				From:  cursorio.TextOffset{Byte: 0, LineColumn: cursorio.TextLineColumn{0, 0}},
+				Until: cursorio.TextOffset{Byte: 16, LineColumn: cursorio.TextLineColumn{0, 16}},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			document, documentOffsets, err := Parse(strings.NewReader(tc.input))
+			if err != nil {
+				t.Fatalf("unexpected error for %q: %v", tc.input, err)
+			}
+
+			var foundComment bool
+
+			visitNode(document, func(n *html.Node) {
+				if n.Type != html.CommentNode {
+					return
+				}
+
+				foundComment = true
+				np, ok := documentOffsets.GetNodeMetadata(n)
+				if !ok {
+					t.Fatal("expected metadata for comment node")
+				}
+
+				if _a, _e := np.TokenOffsets, tc.expectedOffset; _a != _e {
+					t.Errorf("token offsets: expected %v, got %v", _e, _a)
+				}
+			})
+
+			if !foundComment {
+				t.Fatal("expected to find a comment node")
+			}
+
+			var rendered = &bytes.Buffer{}
+
+			if err = html.Render(rendered, document); err != nil {
+				t.Fatalf("unexpected render error for %q: %v", tc.input, err)
+			} else if _a, _e := rendered.String(), tc.expected; _a != _e {
+				t.Fatalf("rendered: expected %q, got %q", _e, _a)
+			}
+		})
+	}
+}
