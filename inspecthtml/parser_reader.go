@@ -19,7 +19,7 @@ var reTagName = regexp.MustCompile(`^<([^\s/<>]+)`)
 var reAttrKeyValue = regexp.MustCompile(`.*?[\s<>]*([^=\s/<>]+)((\s*=\s*)(.))?`)
 var reAttrValueDoubleQuote = regexp.MustCompile(`.*?"`)
 var reAttrValueSingleQuote = regexp.MustCompile(`.*?'`)
-var reAttrValueUnquoted = regexp.MustCompile(`[^\s/>]+`)
+var reAttrValueUnquoted = regexp.MustCompile(`[^\s>]+`)
 
 type parserNodeSwap struct {
 	original    string
@@ -136,7 +136,7 @@ func (r *parserReader) next() error {
 						}
 
 						lastAttrSuffix = nil
-					} else if !unicode.IsSpace(rune(rawCutset[0])) && rawCutset[0] != '>' && rawCutset[0] != '/' {
+					} else if !unicode.IsSpace(rune(rawCutset[0])) && rawCutset[0] != '>' {
 						closeMatcher := reAttrValueUnquoted.FindSubmatchIndex(rawCutset)
 
 						if closeMatcher == nil {
