@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"unicode"
 
 	"github.com/dpb587/cursorio-go/cursorio"
@@ -221,10 +222,20 @@ func (r *parserReader) next() error {
 
 		r.buf = []byte("<!--c" + nodeKey + "-->")
 	case html.TextToken:
+		original := r.tokenizer.Token().Data
+
+		// approximate behavior of upstream parser; it does not seem to care about other control characters?
+		// see https://www.w3.org/International/questions/qa-controls.en.html#support
+		original = strings.ReplaceAll(original, "\x00", "")
+		if len(original) == 0 {
+			// lazily ignore it
+			return r.next()
+		}
+
 		r.nodeIdx++
 		nodeKey := strconv.FormatInt(r.nodeIdx, 10)
 		r.nodeSwapByKey[nodeKey] = parserNodeSwap{
-			original:    r.tokenizer.Token().Data,
+			original:    original,
 			offsetRange: r.doc.WriteForOffsetRange(raw),
 		}
 

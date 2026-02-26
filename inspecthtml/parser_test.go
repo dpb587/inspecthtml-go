@@ -2270,3 +2270,16 @@ func TestReaderTagAttrUnquotedStartingWithSlash(t *testing.T) {
 		t.Fatalf("rendered: expected %q, got %q", _e, _a)
 	}
 }
+
+func TestReaderDropNUL(t *testing.T) {
+	document, _, err := Parse(strings.NewReader("<html><head><body>l\x00r</html>"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// previous implementation did not match the upstream tokenizer which drops NUL
+
+	if _a, _e := document.FirstChild.LastChild.FirstChild.Data, "lr"; _a != _e {
+		t.Fatalf("expected text content to be 'lr', got %q", _a)
+	}
+}
