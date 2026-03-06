@@ -188,7 +188,7 @@ func (r *parserReader) next() error {
 
 		wSuffix = fmt.Appendf(wSuffix, " o=%q", nodeKey)
 
-		if bytes.HasSuffix(raw, []byte("/>")) {
+		if tt == html.SelfClosingTagToken && bytes.HasSuffix(raw, []byte("/>")) {
 			wSuffix = append(wSuffix, '/', '>')
 			raw = raw[:len(raw)-2]
 		} else if bytes.HasSuffix(raw, []byte(">")) {

@@ -2271,6 +2271,82 @@ func TestReaderTagAttrUnquotedStartingWithSlash(t *testing.T) {
 	}
 }
 
+func TestReaderTagAttrUnquotedSingleSlash(t *testing.T) {
+	// Regression test: unquoted attribute value that is just "/" followed by ">"
+	// E.g., href=/> where the value is "/" not "/>"
+	// This was causing the internal o attribute to be incorrectly included in the attribute value
+	document, documentOffsets, err := Parse(strings.NewReader(`<a href=/>hello</a>`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	visitNode(document, func(n *html.Node) {
+		if n.DataAtom != atom.A {
+			return
+		}
+
+		// Verify attribute is present
+		if len(n.Attr) != 1 {
+			t.Fatalf("expected 1 attribute, got %d: %+v", len(n.Attr), n.Attr)
+		}
+
+		// Verify the attribute value is just "/"
+		if _a, _e := n.Attr[0].Key, "href"; _a != _e {
+			t.Fatalf("attr key: expected %q, got %q", _e, _a)
+		}
+		if _a, _e := n.Attr[0].Val, "/"; _a != _e {
+			t.Fatalf("attr value: expected %q, got %q", _e, _a)
+		}
+
+		np, ok := documentOffsets.GetNodeMetadata(n)
+		if !ok {
+			t.Fatal("expected metadata")
+		}
+
+		// TagAttr length must match Attr length
+		if _a, _e := len(np.TagAttr), 1; _a != _e {
+			t.Fatalf("TagAttr length (%d) must match Attr length (%d)", _a, _e)
+		}
+
+		// Attribute: href=/
+		if np.TagAttr[0] == nil {
+			t.Fatal("attribute 0 (href) has nil metadata")
+		} else if _a, _e := np.TagAttr[0].KeyOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       3,
+				LineColumn: cursorio.TextLineColumn{0, 3},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       7,
+				LineColumn: cursorio.TextLineColumn{0, 7},
+			},
+		}); _a != _e {
+			t.Fatalf("attr 0 key: expected %v, got %v", _e, _a)
+		} else if np.TagAttr[0].ValueOffsets == nil {
+			t.Fatalf("attr 0 value: expected non-nil, got nil")
+		} else if _a, _e := np.TagAttr[0].ValueOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       8,
+				LineColumn: cursorio.TextLineColumn{0, 8},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       9,
+				LineColumn: cursorio.TextLineColumn{0, 9},
+			},
+		}); *_a != _e {
+			t.Fatalf("attr 0 value: expected %v, got %v", _e, *_a)
+		}
+	})
+
+	var rendered = &bytes.Buffer{}
+	err = html.Render(rendered, document)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	} else if _a, _e := rendered.String(), "<html><head></head><body><a href=\"/\">hello</a></body></html>"; _a != _e {
+		t.Fatalf("rendered: expected %q, got %q", _e, _a)
+	}
+}
+
 func TestReaderDropNUL(t *testing.T) {
 	document, _, err := Parse(strings.NewReader("<html><head><body>l\x00r</html>"))
 	if err != nil {
