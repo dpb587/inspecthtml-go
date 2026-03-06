@@ -1856,7 +1856,6 @@ func TestParserInjectedElementWithAttributes(t *testing.T) {
 
 			case atom.Body:
 				foundBodyCount++
-				// Well-formed body element
 				np, ok := documentOffsets.GetNodeMetadata(n)
 				if !ok {
 					t.Fatal("expected metadata for body element")
@@ -1875,13 +1874,11 @@ func TestParserInjectedElementWithAttributes(t *testing.T) {
 				}
 
 			default:
-				// Check for malformed body< element (parsed as element with name "body<")
 				if n.Data == "body<" {
 					foundBodyMalformedCount++
-					// Malformed <body< tag - now properly tracked with improved regex
 					np, ok := documentOffsets.GetNodeMetadata(n)
 					if !ok {
-						t.Fatal("expected metadata for malformed body< element")
+						t.Fatal("expected metadata for body< element")
 					}
 					if _a, _e := np.TokenOffsets, (cursorio.TextOffsetRange{
 						From: cursorio.TextOffset{
@@ -1900,24 +1897,21 @@ func TestParserInjectedElementWithAttributes(t *testing.T) {
 		}
 	})
 
-	// The malformed <body tag causes parser to handle things strangely, but should not panic
 	if foundDivCount != 1 {
 		t.Fatalf("expected exactly 1 div element, got %d", foundDivCount)
 	} else if foundBodyCount != 1 {
-		t.Fatalf("expected exactly 1 well-formed body element, got %d", foundBodyCount)
+		t.Fatalf("expected exactly 1 body element, got %d", foundBodyCount)
 	} else if foundBodyMalformedCount != 1 {
 		t.Fatalf("expected exactly 1 malformed body< element, got %d", foundBodyMalformedCount)
 	}
 
-	// Most importantly, verify rendering doesn't panic
+	// Verify rendering matches the standard html package output exactly.
 	var rendered = &bytes.Buffer{}
 	err = html.Render(rendered, document)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Check the full rendered output matches expected
-	// The malformed <body tag results in spurious attributes from HTML parser error recovery
 	expectedOutput := `<html><head></head><body><div>content</div><body< div=""></body<></body></html>`
 	if _a, _e := rendered.String(), expectedOutput; _a != _e {
 		t.Fatalf("rendered: expected %q, got %q", _e, _a)

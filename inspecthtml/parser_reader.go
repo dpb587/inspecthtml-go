@@ -13,10 +13,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-var emptyQuotes = []byte(`""`)
-var equalEmptyQuotes = []byte(`=""`)
-
-var reTagName = regexp.MustCompile(`^<([^\s/<>]+)`)
+var reTagName = regexp.MustCompile(`^<([^\s/>]+)`)
 var reAttrKeyValue = regexp.MustCompile(`.*?[\s<>]*([^=\s/<>]+)((\s*=\s*)(.))?`)
 var reAttrValueDoubleQuote = regexp.MustCompile(`.*?"`)
 var reAttrValueSingleQuote = regexp.MustCompile(`.*?'`)
@@ -90,8 +87,6 @@ func (r *parserReader) next() error {
 			rawCutset = rawCutset[tagNameMatcher[3]:]
 		}
 
-		var lastAttrSuffix []byte
-
 		_, hasAttr := r.tokenizer.TagName()
 		for hasAttr {
 			attrKey, attrValue, more := r.tokenizer.TagAttr()
@@ -125,8 +120,6 @@ func (r *parserReader) next() error {
 						} else {
 							consumeLen = closeMatcher[1] + 1
 						}
-
-						lastAttrSuffix = nil
 					} else if rawCutset[0] == '\'' {
 						closeMatcher := reAttrValueSingleQuote.FindSubmatchIndex(rawCutset[1:])
 
@@ -135,8 +128,6 @@ func (r *parserReader) next() error {
 						} else {
 							consumeLen = closeMatcher[1] + 1
 						}
-
-						lastAttrSuffix = nil
 					} else if !unicode.IsSpace(rune(rawCutset[0])) && rawCutset[0] != '>' {
 						closeMatcher := reAttrValueUnquoted.FindSubmatchIndex(rawCutset)
 
@@ -145,8 +136,6 @@ func (r *parserReader) next() error {
 						} else {
 							consumeLen = closeMatcher[1]
 						}
-
-						lastAttrSuffix = nil
 					}
 
 					if consumeLen > 0 {
@@ -154,15 +143,12 @@ func (r *parserReader) next() error {
 						tagAttrProfile.ValueOffsets = &valueOffsetRange
 
 						rawCutset = rawCutset[consumeLen:]
-					} else {
-						lastAttrSuffix = emptyQuotes
 					}
 				} else if len(attrValue) > 0 {
 					// an edge case worth fixing; almost panic-worthy; subsequent attributes may no longer be correct
 					fmt.Fprintf(os.Stderr, "inspecthtml: regex attr failed (raw=%q, key=%q, val=%q)\n", string(rawCutset), string(attrKey), string(attrValue))
 				} else {
 					rawCutset = rawCutset[rawAttrMatcher[3]:]
-					lastAttrSuffix = equalEmptyQuotes
 				}
 
 				tagProfile.TagAttr = append(tagProfile.TagAttr, &tagAttrProfile)
@@ -180,23 +166,16 @@ func (r *parserReader) next() error {
 
 		r.nodeTagByKey[nodeKey] = tagProfile
 
-		var wSuffix []byte
-
-		if len(lastAttrSuffix) > 0 {
-			wSuffix = append(lastAttrSuffix[:], wSuffix...)
+		// always first attribute to avoid mangling that may happen upstream for malformed user input
+		// including trailing space to avoid any accidental overlap with malformed tags (e.g., `<body</div>`)
+		oAttr := fmt.Appendf(nil, " o=%q ", nodeKey)
+		if tagNameMatcher != nil {
+			insertAt := tagNameMatcher[3]
+			r.buf = append(raw[:insertAt:insertAt], oAttr...)
+			r.buf = append(r.buf, raw[insertAt:]...)
+		} else {
+			r.buf = raw
 		}
-
-		wSuffix = fmt.Appendf(wSuffix, " o=%q", nodeKey)
-
-		if tt == html.SelfClosingTagToken && bytes.HasSuffix(raw, []byte("/>")) {
-			wSuffix = append(wSuffix, '/', '>')
-			raw = raw[:len(raw)-2]
-		} else if bytes.HasSuffix(raw, []byte(">")) {
-			wSuffix = append(wSuffix, '>')
-			raw = raw[:len(raw)-1]
-		}
-
-		r.buf = append(raw, wSuffix...)
 	case html.EndTagToken:
 		docOffsetRange := r.doc.WriteForOffsetRange(raw)
 		r.buf = append(raw, []byte("<!--"+docOffsetRange.OffsetRangeString()+"-->")...)
