@@ -2,6 +2,8 @@ github.com/apparentlymart/go-textseg/v16 v16.0.0 h1:xD7KZ/8d+ED3d+k78g/2weJEIGzD
 github.com/apparentlymart/go-textseg/v16 v16.0.0/go.mod h1:wCrfQB/AReGqD1ECqVHhhsq7BV2AxUhnirsBLInYHvE=
 github.com/dpb587/cursorio-go v0.0.0-20250415220656-c43e40f866fd h1:syuWYbcolG3GMI0R3iMcbPZSFrEEwR73FwvSWlvxMcY=
 github.com/dpb587/cursorio-go v0.0.0-20250415220656-c43e40f866fd/go.mod h1:YokGb5i31XI0Z+4t8bZxvZecyKY3ddLlih9Rr7eBgW0=
+github.com/dpb587/cursorio-go v0.0.0-20260225162319-eb8dd2de211d h1:/KZWZmxMeZzbiao4iDl4MPPJ9EwSg8olw3PuIVVcq4s=
+github.com/dpb587/cursorio-go v0.0.0-20260225162319-eb8dd2de211d/go.mod h1:YokGb5i31XI0Z+4t8bZxvZecyKY3ddLlih9Rr7eBgW0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 golang.org/x/net v0.39.0 h1:ZCu7HMWDxpXpaiKdhzIfaltL9Lp31x/3fCP11bc6/fY=

@@ -2,9 +2,10 @@
 
 Parse HTML and capture metadata about byte offsets.
 
-* Reference byte and line+column offsets of tags, their attributes, and other node types.
+* Reference byte and line+column offsets of nodes and element attributes.
+* Wraps the standard [`golang.org/x/net/html`](https://pkg.go.dev/golang.org/x/net/html) implementation.
 
-This is implemented by monitoring the input stream, passing it to [`golang.org/x/net/html`](https://pkg.go.dev/golang.org/x/net/html), and reconstructing node metadata based on the results.
+This is implemented by pre-tokenizing the input stream to inject offset metadata before forwarding it to `html.Parse` and then cleaning up smuggled metadata from the resulting tree. The returned result is a standard `*html.Node` result (equivalent to a plain `html.Parse`) and a service for retrieving offset metadata given a `*html.Node` value.
 
 ## Usage
 
@@ -73,10 +74,16 @@ nodeMetadata, hasNodeMetadata := parsedMetadata.GetNodeMetadata(node)
 
 Always check that node or attribute metadata is available before accessing it. Specifically, keep in mind the following:
 
-* The DOM Processor may inject elements to create a compliant HTML5 DOM Tree. Injected elements will not have any metadata since they were not present in source.
+* The DOM Processor may inject elements or re-parent nodes to create a compliant HTML5 DOM Tree. Injected elements will not have any metadata since they were not present in source. Re-parented nodes may be siblings in the DOM, but have non-sequential source offsets.
 * The DOM Processor will close unclosed elements. In this case, the metadata will use a logical end tag of zero length based on the relative position of the next element.
 * Node attributes may not have an offset for its value if there was no value in the source.
+* Whitespace-only text nodes are not tracked for offsets due to tight algorithmic coupling it would be require with the upstream implementation. In practice, these nodes have not been the direct target of offset lookups.
 * Although unlikely, it is technically possible for a node attribute to be missing metadata due to the implementation method. In this case, it will be `nil` (and a test case for fixing it would be helpful).
+
+## Notes
+
+* This approach is a bit hacky and inefficient due to double tokenization steps. It seemed like a practical alternative to: maintain an indefinite fork; or reimplement the complex HTML5 processor specification. There are a couple spots where Go's tokenization/parser behaviors leak into this for the sake of accurate offsets tracking.
+* [go#34302](https://github.com/golang/go/issues/34302) describes a feature proposal for a subset of this behavior, but has not seen any recent activity.
 
 ## License
 

@@ -199,7 +199,6 @@ func (r *parserReader) next() error {
 		r.buf = append(raw, wSuffix...)
 	case html.EndTagToken:
 		docOffsetRange := r.doc.WriteForOffsetRange(raw)
-
 		r.buf = append(raw, []byte("<!--"+docOffsetRange.OffsetRangeString()+"-->")...)
 	case html.CommentToken:
 		r.nodeIdx++
@@ -207,12 +206,32 @@ func (r *parserReader) next() error {
 
 		var commentContent string
 
-		if len(raw) >= 7 {
-			// <!--content-->
-			commentContent = string(raw)[4 : len(raw)-3]
-		} else if len(raw) > 4 {
-			// malformed; but tokenizer recovered; e.g. <!--content
-			commentContent = string(raw)[4:]
+		if !bytes.HasPrefix(raw, []byte("<!--")) {
+			// Bogus comment token (e.g. <?php...?> or <!tag...>): the tokenizer
+			// already computes the correct comment data, so use it directly.
+			commentContent = r.tokenizer.Token().Data
+		} else {
+			if len(raw) >= 7 {
+				// <!--content--> or <!--content--!>
+				// HTML5 allows --!> as a comment terminator (comment end bang state).
+				// Strip 4 chars for --!> endings vs the usual 3 for -->.
+				if bytes.HasSuffix(raw, []byte("--!>")) {
+					commentContent = string(raw)[4 : len(raw)-4]
+				} else {
+					commentContent = string(raw)[4 : len(raw)-3]
+				}
+			} else if len(raw) > 4 {
+				// malformed; but tokenizer recovered; e.g. <!--content or <!-->
+				commentContent = string(raw)[4:]
+			}
+
+			// Normalize line endings per the HTML spec input stream preprocessing
+			// (\r\n → \n, \r → \n). Token().Data does this but for non-bogus comments
+			// we use raw slicing (since Token().Data returns incorrect data for malformed
+			// short comments like <!--> yielding "" instead of ">").
+			commentContent = strings.ReplaceAll(commentContent, "\r\n", "\n")
+			commentContent = strings.ReplaceAll(commentContent, "\r", "\n")
+			commentContent = html.UnescapeString(commentContent)
 		}
 
 		r.nodeSwapByKey[nodeKey] = parserNodeSwap{
@@ -224,11 +243,33 @@ func (r *parserReader) next() error {
 	case html.TextToken:
 		original := r.tokenizer.Token().Data
 
+		// The upstream html.Parse has complex logic for WS (dropping before <head>,
+		// preserving in <head>, reparenting after </body>, active formatting etc.).
+		// Instead of trying to mirror that logic, just consider it out of scope for
+		// offset tracking and let the upstream parser handle it.
+		if !strings.ContainsFunc(original, func(r rune) bool {
+			if uint32(r) <= unicode.MaxLatin1 {
+				switch r {
+				case '\t', '\n', '\v', '\f', '\r', ' ', 0x85, 0xA0:
+					return false
+				}
+
+				return true
+			}
+
+			return !unicode.Is(unicode.White_Space, r)
+		}) {
+			r.doc.Write(raw)
+			r.buf = raw
+
+			return nil
+		}
+
 		// approximate behavior of upstream parser; it does not seem to care about other control characters?
 		// see https://www.w3.org/International/questions/qa-controls.en.html#support
 		original = strings.ReplaceAll(original, "\x00", "")
 		if len(original) == 0 {
-			// lazily ignore it
+			// quietly drop the token
 			return r.next()
 		}
 
@@ -239,23 +280,7 @@ func (r *parserReader) next() error {
 			offsetRange: r.doc.WriteForOffsetRange(raw),
 		}
 
-		// WS vs non-WS is significant to tokenizer; maybe only relevant outside of body?
-		// for now, avoid special-casing (e.g. <head> </head>; <script>text</script>)
-		if bytes.ContainsFunc(raw, func(r rune) bool {
-			if uint32(r) <= unicode.MaxLatin1 {
-				switch r {
-				case '\t', '\n', '\v', '\f', '\r', ' ', 0x85, 0xA0:
-					return false
-				}
-				return true
-			}
-
-			return !unicode.Is(unicode.White_Space, r)
-		}) {
-			r.buf = []byte("t" + nodeKey)
-		} else {
-			r.buf = []byte("<!--t" + nodeKey + "-->")
-		}
+		r.buf = []byte("t" + nodeKey)
 	default:
 		r.doc.Write(raw)
 		r.buf = raw

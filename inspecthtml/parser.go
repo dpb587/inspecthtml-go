@@ -81,12 +81,17 @@ func (p *Parser) rebuild(root *html.Node) {
 		metadataByNode: map[*html.Node]*NodeMetadata{},
 	}
 
-	p.rebuildNode(root, rebuildState{})
+	p.rebuildNode(root)
 }
 
-func (p *Parser) rebuildNode(n *html.Node, state rebuildState) {
+func (p *Parser) rebuildNode(n *html.Node) {
 	switch n.Type {
 	case html.TextNode:
+		// Passthrough whitespace nodes are not encoded and have no key; leave them.
+		if len(n.Data) < 2 || n.Data[0] != 't' {
+			return
+		}
+
 		split := strings.SplitN(n.Data[1:], "t", 2)
 		swap := p.r.nodeSwapByKey[split[0]]
 		n.Data = swap.original
@@ -141,26 +146,6 @@ func (p *Parser) rebuildNode(n *html.Node, state rebuildState) {
 			p.offsets.metadataByNode[n] = &NodeMetadata{
 				TokenOffsets: pnt.offsetRange,
 			}
-		case 't':
-			pnt := p.r.nodeSwapByKey[n.Data[1:]]
-
-			if state.wsDrop {
-				n.Parent.RemoveChild(n)
-
-				return
-			}
-
-			n.Type = html.TextNode
-			n.Data = pnt.original
-
-			p.offsets.metadataByNode[n] = &NodeMetadata{
-				TokenOffsets: pnt.offsetRange,
-			}
-
-			if state.wsReparent != nil && n.Parent != state.wsReparent {
-				n.Parent.RemoveChild(n)
-				state.wsReparent.AppendChild(n)
-			}
 		default:
 			if p.offsets.metadataByNode[n.PrevSibling] != nil {
 				// if it was already set, html parser must have reordered nodes
@@ -203,48 +188,13 @@ func (p *Parser) rebuildNode(n *html.Node, state rebuildState) {
 		}
 	}
 
-	var childState rebuildState
-	if n.Type == html.DocumentNode || n.DataAtom == atom.Html {
-		childState.wsDrop = true
-	}
-
 	for c := n.FirstChild; c != nil; {
 		next := c.NextSibling
-		p.rebuildNode(c, childState)
-
-		//   - Document child before <html>: drop (initialIM / beforeHTMLIM)
-		//   - Document child after <html>: reparent to <body> (afterAfterBodyIM)
-		//   - <html> child before <head>: drop (beforeHeadIM)
-		//   - <html> child between <head> and <body>: keep (afterHeadIM)
-		//   - <html> child after <body>: reparent to <body> (afterBodyIM)
-		if c.Type == html.ElementNode {
-			if n.Type == html.DocumentNode && c.DataAtom == atom.Html {
-				childState.wsDrop = false
-				for body := c.FirstChild; body != nil; body = body.NextSibling {
-					if body.Type == html.ElementNode && body.DataAtom == atom.Body {
-						childState.wsReparent = body
-						break
-					}
-				}
-			} else if n.DataAtom == atom.Html {
-				switch c.DataAtom {
-				case atom.Head:
-					childState.wsDrop = false
-				case atom.Body:
-					childState.wsReparent = c
-				}
-			}
-		}
-
+		p.rebuildNode(c)
 		if c.NextSibling != nil && c.NextSibling != next {
 			c = c.NextSibling
 		} else {
 			c = next
 		}
 	}
-}
-
-type rebuildState struct {
-	wsDrop     bool
-	wsReparent *html.Node
 }

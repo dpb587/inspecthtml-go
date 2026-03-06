@@ -12,5 +12,5 @@ require (
 
 require (
 	github.com/apparentlymart/go-textseg/v16 v16.0.0 // indirect
-	github.com/dpb587/cursorio-go v0.0.0-20250415220656-c43e40f866fd // indirect
+	github.com/dpb587/cursorio-go v0.0.0-20260225162319-eb8dd2de211d // indirect
 )

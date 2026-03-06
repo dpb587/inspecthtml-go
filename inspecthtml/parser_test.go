@@ -2,6 +2,8 @@ package inspecthtml
 
 import (
 	"bytes"
+	"fmt"
+	"io"
 	"strings"
 	"testing"
 
@@ -2360,6 +2362,191 @@ func TestReaderDropNUL(t *testing.T) {
 	}
 }
 
+func TestReaderCommentEntityDoubleEscape(t *testing.T) {
+	// Regression test: HTML entities inside comments were not decoded, causing double-escaping.
+	// x/net/html's html.Parse decodes entities in comment Data (e.g. &amp; -> &),
+	// then html.Render re-encodes them (& -> &amp;). Our implementation must match
+	// by storing the decoded form, not the raw entity text.
+	document, _, err := Parse(strings.NewReader(`<!--comment &amp; content-->`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var rendered = &bytes.Buffer{}
+	err = html.Render(rendered, document)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	} else if _a, _e := rendered.String(), `<!--comment &amp; content--><html><head></head><body></body></html>`; _a != _e {
+		t.Errorf("rendered: expected %v, got %v", _e, _a)
+	}
+}
+
+func TestReaderBogusCommentToken(t *testing.T) {
+	// Regression test: "bogus comment" tokens (e.g. <?php...?>) are emitted as
+	// CommentTokens by the tokenizer, but their raw bytes do not start with <!--.
+	// Previously the code always sliced raw[4:len-3] assuming <!--...-->, which
+	// corrupted the comment data (e.g. <?php foo ?> became "p foo " instead of "?php foo ?").
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			"php processing instruction",
+			`<div><?php if (is_category('5')) { ?></div>`,
+			`<div><!--?php if (is_category('5')) { ?--></div>`,
+		},
+		{
+			"simple bogus comment",
+			`<?hello world?>`,
+			`<!--?hello world?--><html><head></head><body></body></html>`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			htmlRoot, _ := html.Parse(strings.NewReader(tc.input))
+			htmlRender := &bytes.Buffer{}
+			if err := html.Render(htmlRender, htmlRoot); err != nil {
+				t.Fatalf("html.Render: %v", err)
+			}
+
+			document, _, err := Parse(strings.NewReader(tc.input))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			var rendered = &bytes.Buffer{}
+			if err = html.Render(rendered, document); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			} else if _a, _e := rendered.String(), htmlRender.String(); _a != _e {
+				t.Errorf("render mismatch:\nhtml:       %v\ninspecthtml: %v", _e, _a)
+			}
+		})
+	}
+}
+
+func TestReaderCommentCRLFNormalization(t *testing.T) {
+	// Comment content with \r\n line endings must be normalized to \n, matching
+	// what html.Parse stores (per HTML spec input stream preprocessing). Without
+	// normalization, html.Render produces \r\n while the reference parser produces
+	// \n, causing a render mismatch.
+	input := "<!--line1\r\nline2\r\nline3-->"
+	htmlRoot, _ := html.Parse(strings.NewReader(input))
+	htmlRender := &bytes.Buffer{}
+	if err := html.Render(htmlRender, htmlRoot); err != nil {
+		t.Fatalf("html render error: %v", err)
+	}
+
+	document, _, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	inspectRender := &bytes.Buffer{}
+	if err := html.Render(inspectRender, document); err != nil {
+		t.Fatalf("inspecthtml render error: %v", err)
+	}
+
+	if htmlRender.String() != inspectRender.String() {
+		t.Fatalf("render mismatch:\n  html:        %q\n  inspecthtml: %q", htmlRender.String(), inspectRender.String())
+	}
+}
+
+func dumpNodeTree(n *html.Node, depth int) string {
+	var sb strings.Builder
+	prefix := strings.Repeat("  ", depth)
+	switch n.Type {
+	case html.ElementNode:
+		attrs := ""
+		for _, a := range n.Attr {
+			attrs += " " + a.Key + "=" + `"` + a.Val + `"`
+		}
+		sb.WriteString(prefix + "<" + n.Data + attrs + ">\n")
+	case html.TextNode:
+		sb.WriteString(prefix + "#text " + fmt.Sprintf("%q", n.Data) + "\n")
+	case html.CommentNode:
+		sb.WriteString(prefix + "<!--" + n.Data + "-->\n")
+	case html.DocumentNode:
+		sb.WriteString(prefix + "[Document]\n")
+	}
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		sb.WriteString(dumpNodeTree(c, depth+1))
+	}
+	return sb.String()
+}
+
+func TestReaderAdoptionAgencySelfClosingAnchor(t *testing.T) {
+	// Self-closing <a /> inside <li> triggers the adoption agency algorithm:
+	// html.Parse creates three <a> copies; inspecthtml should preserve them.
+	// Use ws-only spacing (encodes as <!--t{key}-->) to match real-world case.
+	ws := "\n    \t                                                \n    \t                                                    "
+	input := "<ul>" +
+		ws + "<li><a title=\"A\" href=\"a/\">A</a></li>" +
+		ws + "<li><a href=\"379/\" /></li>" +
+		ws + "<li><a title=\"After\" href=\"after/\">After</a></li>" +
+		ws + "</ul>"
+
+	htmlRoot, _ := html.Parse(strings.NewReader(input))
+	htmlRender := &bytes.Buffer{}
+	if err := html.Render(htmlRender, htmlRoot); err != nil {
+		t.Fatalf("html render error: %v", err)
+	}
+
+	// Capture the encoded stream for debugging
+	var encodedBuf bytes.Buffer
+	inspectRoot, _, err := NewParser(strings.NewReader(input),
+		ParserConfig{}.SetReaderInterceptor(func(r io.Reader) io.Reader {
+			return io.TeeReader(r, &encodedBuf)
+		}),
+	).Parse()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	inspectRender := &bytes.Buffer{}
+	if err := html.Render(inspectRender, inspectRoot); err != nil {
+		t.Fatalf("inspecthtml render error: %v", err)
+	}
+
+	if htmlRender.String() != inspectRender.String() {
+		t.Logf("encoded stream: %q", encodedBuf.String())
+		// Parse the encoded stream to see how the outer parser builds its tree
+		encodedRoot, _ := html.Parse(bytes.NewReader(encodedBuf.Bytes()))
+		t.Logf("encoded html tree:\n%s", dumpNodeTree(encodedRoot, 0))
+		t.Logf("html tree:\n%s", dumpNodeTree(htmlRoot, 0))
+		t.Logf("inspecthtml tree:\n%s", dumpNodeTree(inspectRoot, 0))
+		t.Fatalf("render mismatch:\n  html:        %q\n  inspecthtml: %q", htmlRender.String(), inspectRender.String())
+	}
+}
+
+func TestReaderScriptWhitespaceOnlyContent(t *testing.T) {
+	// Whitespace-only content inside a <script> element must be preserved.
+	// Previously, whitespace was encoded as <!--t{key}--> but RAWTEXT mode
+	// causes the outer parser to emit it as literal TextToken data, which
+	// rebuildNode cannot decode (key lookup fails, data becomes "").
+	input := `<html><head>` +
+		`<script>var x = 1;</script>` +
+		`<script type="text/plain">` + "\r\n  \r\n" + `</script>` +
+		`</head><body></body></html>`
+
+	htmlRoot, _ := html.Parse(strings.NewReader(input))
+	htmlRender := &bytes.Buffer{}
+	if err := html.Render(htmlRender, htmlRoot); err != nil {
+		t.Fatalf("html render error: %v", err)
+	}
+
+	document, _, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	inspectRender := &bytes.Buffer{}
+	if err := html.Render(inspectRender, document); err != nil {
+		t.Fatalf("inspecthtml render error: %v", err)
+	}
+
+	if htmlRender.String() != inspectRender.String() {
+		t.Fatalf("render mismatch:\n  html:        %q\n  inspecthtml: %q", htmlRender.String(), inspectRender.String())
+	}
+}
+
 func TestReaderDropWhitespaceOutsideBody(t *testing.T) {
 	// Whitespace-only text nodes outside of <body> should be dropped.
 	// The tokenizer emits them but they are not meaningful in <html>/<head> context.
@@ -2383,5 +2570,73 @@ func TestReaderDropWhitespaceOutsideBody(t *testing.T) {
 	expected := "<html><head>\n<title>example</title></head>\n<body>\n<p>hello\n</p>\n\n\n</body></html>"
 	if _a, _e := rendered.String(), expected; _a != _e {
 		t.Fatalf("expected rendered output:\n  %q\ngot:\n  %q", _e, _a)
+	}
+}
+
+func TestReaderHeadNbspBeforeTitle(t *testing.T) {
+	// A text token that begins with ASCII whitespace (e.g. '\n') immediately
+	// followed by a non-ASCII-whitespace character (e.g. U+00A0 from &nbsp;)
+	// must not carry the leading newline into the body text node.
+	//
+	// When the HTML parser is in "in head" mode it handles any leading ASCII
+	// whitespace by keeping it in <head>, then switches to body for the
+	// non-whitespace part. Previously, inspecthtml bundled the whole token
+	// (including the '\n') into a single replacement key (e.g. "t1"), which
+	// is entirely non-whitespace from the outer parser's perspective. That
+	// caused html.Parse to reparent the '\n' into <body> along with the
+	// &nbsp;, producing an extra newline before the subsequent <title> that
+	// the reference parser does not emit.
+	input := "<html><head>\n<meta name=\"test\" content=\"value\">\n&nbsp;<title>Test Title</title>\n</head></html>"
+
+	htmlRoot, _ := html.Parse(strings.NewReader(input))
+	htmlRender := &bytes.Buffer{}
+	if err := html.Render(htmlRender, htmlRoot); err != nil {
+		t.Fatalf("html render error: %v", err)
+	}
+
+	document, _, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	inspectRender := &bytes.Buffer{}
+	if err := html.Render(inspectRender, document); err != nil {
+		t.Fatalf("inspecthtml render error: %v", err)
+	}
+
+	if htmlRender.String() != inspectRender.String() {
+		t.Fatalf("render mismatch:\n  html:        %q\n  inspecthtml: %q", htmlRender.String(), inspectRender.String())
+	}
+}
+
+func TestReaderCommentEndBang(t *testing.T) {
+	// HTML5 allows --!> as a valid comment terminator (the "comment end bang"
+	// state in the tokenizer). Previously, inspecthtml stripped only 3 bytes
+	// from the end of the raw token (assuming -->) instead of 4 (for --!>),
+	// leaving a stray '-' in the comment data and causing a render mismatch.
+	//
+	// Minimal case:  <!-- text --!>  should round-trip as  <!-- text -->
+	// Real-world:    <!-----  End of LinkedIn advertising Code -----!>
+	for _, input := range []string{
+		`<html><body><!-- text --!></body></html>`,
+		`<html><body><!-----  End of LinkedIn advertising Code -----!></body></html>`,
+	} {
+		htmlRoot, _ := html.Parse(strings.NewReader(input))
+		htmlRender := &bytes.Buffer{}
+		if err := html.Render(htmlRender, htmlRoot); err != nil {
+			t.Fatalf("html render error: %v", err)
+		}
+
+		document, _, err := Parse(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		inspectRender := &bytes.Buffer{}
+		if err := html.Render(inspectRender, document); err != nil {
+			t.Fatalf("inspecthtml render error: %v", err)
+		}
+
+		if htmlRender.String() != inspectRender.String() {
+			t.Fatalf("render mismatch for input %q:\n  html:        %q\n  inspecthtml: %q", input, htmlRender.String(), inspectRender.String())
+		}
 	}
 }
