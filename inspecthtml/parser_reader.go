@@ -15,8 +15,8 @@ import (
 var emptyQuotes = []byte(`""`)
 var equalEmptyQuotes = []byte(`=""`)
 
-var reTagName = regexp.MustCompile(`^<([^\s/>]+)`)
-var reAttrKeyValue = regexp.MustCompile(`.*?\s+([^=\s/>]+)((\s*=\s*)(.))?`)
+var reTagName = regexp.MustCompile(`^<([^\s/<>]+)`)
+var reAttrKeyValue = regexp.MustCompile(`.*?[\s<>]+([^=\s/<>]+)((\s*=\s*)(.))?`)
 var reAttrValueDoubleQuote = regexp.MustCompile(`.*?"`)
 var reAttrValueSingleQuote = regexp.MustCompile(`.*?'`)
 var reAttrValueUnquoted = regexp.MustCompile(`[^\s/>]+`)
