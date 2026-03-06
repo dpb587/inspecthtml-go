@@ -15,6 +15,12 @@ import (
 var emptyQuotes = []byte(`""`)
 var equalEmptyQuotes = []byte(`=""`)
 
+var reTagName = regexp.MustCompile(`^<([^\s/>]+)`)
+var reAttrKeyValue = regexp.MustCompile(`.*?\s+([^=\s/>]+)((\s*=\s*)(.))?`)
+var reAttrValueDoubleQuote = regexp.MustCompile(`.*?"`)
+var reAttrValueSingleQuote = regexp.MustCompile(`.*?'`)
+var reAttrValueUnquoted = regexp.MustCompile(`[^\s/>]+`)
+
 type parserNodeSwap struct {
 	original    string
 	offsetRange cursorio.TextOffsetRange
@@ -73,7 +79,7 @@ func (r *parserReader) next() error {
 			TagSelfClosing: tt == html.SelfClosingTagToken,
 		}
 
-		tagNameMatcher := regexp.MustCompile(`^<([^\s/>]+)`).FindSubmatchIndex(rawCutset)
+		tagNameMatcher := reTagName.FindSubmatchIndex(rawCutset)
 		if tagNameMatcher != nil {
 			r.doc.Write(rawCutset[:tagNameMatcher[2]])
 
@@ -89,7 +95,7 @@ func (r *parserReader) next() error {
 		for hasAttr {
 			attrKey, attrValue, more := r.tokenizer.TagAttr()
 
-			rawAttrMatcher := regexp.MustCompile(`.*?\s+([^=\s/>]+)((\s*=\s*)(.))?`).FindSubmatchIndex(rawCutset)
+			rawAttrMatcher := reAttrKeyValue.FindSubmatchIndex(rawCutset)
 
 			if rawAttrMatcher == nil {
 				// <script async src="https://example.com/asset?shop="quoteful.example.com"></script>
@@ -111,7 +117,7 @@ func (r *parserReader) next() error {
 					var consumeLen int
 
 					if rawCutset[0] == '"' {
-						closeMatcher := regexp.MustCompile(`.*?"`).FindSubmatchIndex(rawCutset[1:])
+						closeMatcher := reAttrValueDoubleQuote.FindSubmatchIndex(rawCutset[1:])
 
 						if closeMatcher == nil {
 							// weird
@@ -121,7 +127,7 @@ func (r *parserReader) next() error {
 
 						lastAttrSuffix = nil
 					} else if rawCutset[0] == '\'' {
-						closeMatcher := regexp.MustCompile(`.*?'`).FindSubmatchIndex(rawCutset[1:])
+						closeMatcher := reAttrValueSingleQuote.FindSubmatchIndex(rawCutset[1:])
 
 						if closeMatcher == nil {
 							// weird
@@ -131,7 +137,7 @@ func (r *parserReader) next() error {
 
 						lastAttrSuffix = nil
 					} else if !unicode.IsSpace(rune(rawCutset[0])) && rawCutset[0] != '>' && rawCutset[0] != '/' {
-						closeMatcher := regexp.MustCompile(`[^\s/>]+`).FindSubmatchIndex(rawCutset)
+						closeMatcher := reAttrValueUnquoted.FindSubmatchIndex(rawCutset)
 
 						if closeMatcher == nil {
 							// weird
