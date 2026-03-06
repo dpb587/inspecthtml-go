@@ -6,14 +6,27 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/dpb587/inspecthtml-go/inspecthtml"
 )
 
 func main() {
+	if err := mainErr(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+
+		os.Exit(1)
+	}
+}
+
+func mainErr() error {
+	if len(os.Args) != 2 {
+		return fmt.Errorf("usage: %s <html-file>", filepath.Base(os.Args[0]))
+	}
+
 	buf, err := os.ReadFile(os.Args[1])
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	_, _, err = inspecthtml.NewParser(bytes.NewReader(buf), inspecthtml.ParserConfig{}.
@@ -22,6 +35,8 @@ func main() {
 		}),
 	).Parse()
 	if err != nil {
-		panic(fmt.Errorf("inspecthtml: parse: %v", err))
+		return fmt.Errorf("inspecthtml: parse: %v", err)
 	}
+
+	return nil
 }

@@ -1,20 +1,41 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/dpb587/inspecthtml-go/inspecthtml"
 	"golang.org/x/net/html"
 )
 
 func main() {
-	parsedNode, parsedMetadata, err := inspecthtml.Parse(os.Stdin)
+	if err := mainErr(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+
+		os.Exit(1)
+	}
+}
+
+func mainErr() error {
+	if len(os.Args) != 2 {
+		return fmt.Errorf("usage: %s <html-file>", filepath.Base(os.Args[0]))
+	}
+
+	buf, err := os.ReadFile(os.Args[1])
 	if err != nil {
-		panic(err)
+		return err
+	}
+
+	parsedNode, parsedMetadata, err := inspecthtml.Parse(bytes.NewReader(buf))
+	if err != nil {
+		return fmt.Errorf("inspecthtml: parse: %v", err)
 	}
 
 	dumpNode(parsedMetadata, parsedNode, "")
+
+	return nil
 }
 
 func dumpNode(metadata *inspecthtml.ParseMetadata, node *html.Node, indent string) {
