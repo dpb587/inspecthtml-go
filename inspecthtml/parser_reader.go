@@ -11,6 +11,7 @@ import (
 
 	"github.com/dpb587/cursorio-go/cursorio"
 	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 var reTagName = regexp.MustCompile(`^<([^\s/>]+)`)
@@ -33,9 +34,11 @@ type parserReader struct {
 	bufi int
 
 	nodeIdx                int64
+	nodeRawTextMode        bool
 	nodeTagByKey           map[string]*NodeMetadata
 	nodeSwapByKey          map[string]parserNodeSwap
 	endTagOffsetRangeByKey map[string]cursorio.TextOffsetRange
+	wsOffsetRangeByKey     map[string]cursorio.TextOffsetRange
 }
 
 func (r *parserReader) Read(p []byte) (int, error) {
@@ -167,6 +170,14 @@ func (r *parserReader) next() error {
 
 		r.nodeTagByKey[nodeKey] = tagProfile
 
+		if tagNameMatcher != nil {
+			switch atom.Lookup(bytes.ToLower(raw[tagNameMatcher[2]:tagNameMatcher[3]])) {
+			// https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
+			case atom.Script, atom.Style, atom.Textarea, atom.Title, atom.Plaintext, atom.Iframe, atom.Xmp, atom.Noembed, atom.Noframes, atom.Noscript:
+				r.nodeRawTextMode = true
+			}
+		}
+
 		// always first attribute to avoid mangling that may happen upstream for malformed user input
 		// including trailing space to avoid any accidental overlap with malformed tags (e.g., `<body</div>`)
 		oAttr := fmt.Appendf(nil, " o=%q ", nodeKey)
@@ -183,6 +194,8 @@ func (r *parserReader) next() error {
 
 		r.endTagOffsetRangeByKey[nodeKey] = r.doc.WriteForOffsetRange(raw)
 		r.buf = append(raw, []byte("<!--e"+nodeKey+"-->")...)
+
+		r.nodeRawTextMode = false
 	case html.CommentToken:
 		r.nodeIdx++
 		nodeKey := strconv.FormatInt(r.nodeIdx, 10)
@@ -226,26 +239,33 @@ func (r *parserReader) next() error {
 	case html.TextToken:
 		original := r.tokenizer.Token().Data
 
-		// The upstream html.Parse has complex logic for WS (dropping before <head>,
-		// preserving in <head>, reparenting after </body>, active formatting etc.).
-		// Instead of trying to mirror that logic, just consider it out of scope for
-		// offset tracking and let the upstream parser handle it.
-		if !strings.ContainsFunc(original, func(r rune) bool {
-			if uint32(r) <= unicode.MaxLatin1 {
-				switch r {
-				case '\t', '\n', '\v', '\f', '\r', ' ', 0x85, 0xA0:
-					return false
+		if !r.nodeRawTextMode {
+			// The upstream html.Parse has complex logic for WS (dropping before <head>, preserving in <head>, reparenting
+			// after </body>, active formatting etc.). Rather than duplicating and maintaining the logic, propagate it and
+			// rely on a trailing comment for backfilling the whitespace text node if it remains.
+			//
+			// It is possible this whitespace gets squashed with other text nodes, in which case the offsets range currently
+			// will be lost.
+			if !strings.ContainsFunc(original, func(r rune) bool {
+				if uint32(r) <= unicode.MaxLatin1 {
+					switch r {
+					case '\t', '\n', '\v', '\f', '\r', ' ', 0x85, 0xA0:
+						return false
+					}
+
+					return true
 				}
 
-				return true
+				return !unicode.Is(unicode.White_Space, r)
+			}) {
+				r.nodeIdx++
+				nodeKey := strconv.FormatInt(r.nodeIdx, 10)
+
+				r.wsOffsetRangeByKey[nodeKey] = r.doc.WriteForOffsetRange(raw)
+				r.buf = append(raw, []byte("<!--w"+nodeKey+"-->")...)
+
+				return nil
 			}
-
-			return !unicode.Is(unicode.White_Space, r)
-		}) {
-			r.doc.Write(raw)
-			r.buf = raw
-
-			return nil
 		}
 
 		// approximate behavior of upstream parser; it does not seem to care about other control characters?

@@ -28,6 +28,7 @@ func NewParser(r io.Reader, opts ...ParserOption) *Parser {
 			nodeTagByKey:           map[string]*NodeMetadata{},
 			nodeSwapByKey:          map[string]parserNodeSwap{},
 			endTagOffsetRangeByKey: map[string]cursorio.TextOffsetRange{},
+			wsOffsetRangeByKey:     map[string]cursorio.TextOffsetRange{},
 		},
 	}
 
@@ -200,6 +201,8 @@ func (p *Parser) rebuildNode(n *html.Node) {
 			p.offsets.metadataByNode[n] = &NodeMetadata{
 				TokenOffsets: pnt.offsetRange,
 			}
+
+			return
 		case 'e':
 			if p.offsets.metadataByNode[n.PrevSibling] != nil {
 				// if it was already set, html parser must have reordered nodes
@@ -213,20 +216,29 @@ func (p *Parser) rebuildNode(n *html.Node) {
 				// missing meta; html parser must have injected/restarted a previously open tag
 				// rather than fake TokenOffsets + TagNameOffsets, drop the metadata
 			}
+		case 'w':
+			if n.PrevSibling != nil && n.PrevSibling.Type == html.TextNode && p.offsets.metadataByNode[n.PrevSibling] == nil {
+				v := p.r.wsOffsetRangeByKey[n.Data[1:]]
 
-			if n.NextSibling != nil {
-				n.NextSibling.PrevSibling = n.PrevSibling
-			} else if n.Parent != nil {
-				n.Parent.LastChild = n.PrevSibling
-			}
-
-			if n.PrevSibling != nil {
-				n.PrevSibling.NextSibling = n.NextSibling
-			} else if n.Parent != nil {
-				n.Parent.FirstChild = n.NextSibling
+				p.offsets.metadataByNode[n.PrevSibling] = &NodeMetadata{
+					TokenOffsets: v,
+				}
 			}
 		default:
 			// unknown comment; shouldn't happen; panic as invalid state?
+			return
+		}
+
+		if n.NextSibling != nil {
+			n.NextSibling.PrevSibling = n.PrevSibling
+		} else if n.Parent != nil {
+			n.Parent.LastChild = n.PrevSibling
+		}
+
+		if n.PrevSibling != nil {
+			n.PrevSibling.NextSibling = n.NextSibling
+		} else if n.Parent != nil {
+			n.Parent.FirstChild = n.NextSibling
 		}
 
 		return
