@@ -2474,6 +2474,38 @@ func dumpNodeTree(n *html.Node, depth int) string {
 	return sb.String()
 }
 
+func TestReaderPreLeadingNewline(t *testing.T) {
+	// Per the HTML spec (§12.2.6.4.7), a single leading newline inside <pre>
+	// (and <listing>) is discarded. The standard parser does this at tokenization
+	// time; since inspecthtml encodes text tokens, it must restore the behavior
+	// during tree rebuild.
+	for _, tag := range []string{"pre", "listing"} {
+		t.Run(tag, func(t *testing.T) {
+			for _, nl := range []string{"\n", "\r\n", "\r"} {
+				input := "<" + tag + ">" + nl + "content</" + tag + ">"
+				htmlRoot, _ := html.Parse(strings.NewReader(input))
+				htmlRender := &bytes.Buffer{}
+				if err := html.Render(htmlRender, htmlRoot); err != nil {
+					t.Fatalf("html render error: %v", err)
+				}
+
+				document, _, err := Parse(strings.NewReader(input))
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				inspectRender := &bytes.Buffer{}
+				if err := html.Render(inspectRender, document); err != nil {
+					t.Fatalf("inspecthtml render error: %v", err)
+				}
+
+				if htmlRender.String() != inspectRender.String() {
+					t.Errorf("render mismatch for newline %q:\n  html:        %q\n  inspecthtml: %q", nl, htmlRender.String(), inspectRender.String())
+				}
+			}
+		})
+	}
+}
+
 func TestReaderAdoptionAgencySelfClosingAnchor(t *testing.T) {
 	// Self-closing <a /> inside <li> triggers the adoption agency algorithm:
 	// html.Parse creates three <a> copies; inspecthtml should preserve them.

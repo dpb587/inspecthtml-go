@@ -97,10 +97,13 @@ func (p *Parser) rebuildNode(n *html.Node) {
 		n.Data = swap.original
 
 		// Mirror textIM: strip a leading \r/\n from the first text child of
-		// <textarea>. The standard parser does this at parse time, but since
-		// we encode text as t{key}, the outer tokenizer never sees the raw
-		// newline to strip it. Restore the same behavior here.
-		if n.Parent != nil && n.Parent.DataAtom == atom.Textarea && n.Parent.FirstChild == n {
+		// <textarea>, <pre>, and <listing>. The standard parser does this at
+		// parse time, but since we encode text as t{key}, the outer tokenizer
+		// never sees the raw newline to strip it. Restore the same behavior here.
+		if n.Parent != nil && n.Parent.FirstChild == n &&
+			(n.Parent.DataAtom == atom.Textarea ||
+				n.Parent.DataAtom == atom.Pre ||
+				n.Parent.DataAtom == atom.Listing) {
 			if len(n.Data) > 0 && n.Data[0] == '\r' {
 				n.Data = n.Data[1:]
 			}
