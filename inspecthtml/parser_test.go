@@ -2359,3 +2359,29 @@ func TestReaderDropNUL(t *testing.T) {
 		t.Fatalf("expected text content to be 'lr', got %q", _a)
 	}
 }
+
+func TestReaderDropWhitespaceOutsideBody(t *testing.T) {
+	// Whitespace-only text nodes outside of <body> should be dropped.
+	// The tokenizer emits them but they are not meaningful in <html>/<head> context.
+	input := "<html>\n<head>\n<title>example</title></head>\n<body>\n<p>hello\n</p>\n</body>\n</html>\n"
+	document, _, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var rendered = &bytes.Buffer{}
+	err = html.Render(rendered, document)
+	if err != nil {
+		t.Fatalf("unexpected render error: %v", err)
+	}
+
+	// The standard html parser:
+	// - drops whitespace before <head> (beforeHeadIM)
+	// - preserves whitespace inside <head> (inHeadIM)
+	// - preserves whitespace between </head> and <body> as child of <html> (afterHeadIM)
+	// - merges trailing whitespace (after </body> and </html>) into <body>
+	expected := "<html><head>\n<title>example</title></head>\n<body>\n<p>hello\n</p>\n\n\n</body></html>"
+	if _a, _e := rendered.String(), expected; _a != _e {
+		t.Fatalf("expected rendered output:\n  %q\ngot:\n  %q", _e, _a)
+	}
+}
