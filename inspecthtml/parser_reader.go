@@ -32,9 +32,10 @@ type parserReader struct {
 	buf  []byte
 	bufi int
 
-	nodeIdx       int64
-	nodeTagByKey  map[string]*NodeMetadata
-	nodeSwapByKey map[string]parserNodeSwap
+	nodeIdx                int64
+	nodeTagByKey           map[string]*NodeMetadata
+	nodeSwapByKey          map[string]parserNodeSwap
+	endTagOffsetRangeByKey map[string]cursorio.TextOffsetRange
 }
 
 func (r *parserReader) Read(p []byte) (int, error) {
@@ -177,8 +178,11 @@ func (r *parserReader) next() error {
 			r.buf = raw
 		}
 	case html.EndTagToken:
-		docOffsetRange := r.doc.WriteForOffsetRange(raw)
-		r.buf = append(raw, []byte("<!--"+docOffsetRange.OffsetRangeString()+"-->")...)
+		r.nodeIdx++
+		nodeKey := strconv.FormatInt(r.nodeIdx, 10)
+
+		r.endTagOffsetRangeByKey[nodeKey] = r.doc.WriteForOffsetRange(raw)
+		r.buf = append(raw, []byte("<!--e"+nodeKey+"-->")...)
 	case html.CommentToken:
 		r.nodeIdx++
 		nodeKey := strconv.FormatInt(r.nodeIdx, 10)

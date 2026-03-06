@@ -24,9 +24,10 @@ type Parser struct {
 func NewParser(r io.Reader, opts ...ParserOption) *Parser {
 	p := &Parser{
 		r: &parserReader{
-			tokenizer:     html.NewTokenizer(r),
-			nodeTagByKey:  map[string]*NodeMetadata{},
-			nodeSwapByKey: map[string]parserNodeSwap{},
+			tokenizer:              html.NewTokenizer(r),
+			nodeTagByKey:           map[string]*NodeMetadata{},
+			nodeSwapByKey:          map[string]parserNodeSwap{},
+			endTagOffsetRangeByKey: map[string]cursorio.TextOffsetRange{},
 		},
 	}
 
@@ -199,13 +200,12 @@ func (p *Parser) rebuildNode(n *html.Node) {
 			p.offsets.metadataByNode[n] = &NodeMetadata{
 				TokenOffsets: pnt.offsetRange,
 			}
-		default:
+		case 'e':
 			if p.offsets.metadataByNode[n.PrevSibling] != nil {
 				// if it was already set, html parser must have reordered nodes
 				// first encountered offset should be most accurate
 				if p.offsets.metadataByNode[n.PrevSibling].EndTagTokenOffsets == nil {
-					// this should never error given the assumed deterministic tree
-					v, _ := cursorio.ParseTextOffsetRange(n.Data)
+					v := p.r.endTagOffsetRangeByKey[n.Data[1:]]
 
 					p.offsets.metadataByNode[n.PrevSibling].EndTagTokenOffsets = &v
 				}
@@ -225,6 +225,8 @@ func (p *Parser) rebuildNode(n *html.Node) {
 			} else if n.Parent != nil {
 				n.Parent.FirstChild = n.NextSibling
 			}
+		default:
+			// unknown comment; shouldn't happen; panic as invalid state?
 		}
 
 		return
