@@ -2,7 +2,6 @@ package inspecthtml
 
 import (
 	"io"
-	"strings"
 
 	"github.com/dpb587/cursorio-go/cursorio"
 	"golang.org/x/net/html"
@@ -87,19 +86,92 @@ func (p *Parser) rebuild(root *html.Node) {
 func (p *Parser) rebuildNode(n *html.Node) {
 	switch n.Type {
 	case html.TextNode:
-		// Passthrough whitespace nodes are not encoded and have no key; leave them.
-		if len(n.Data) < 2 || n.Data[0] != 't' {
-			return
+		var from int
+		var isTextRef bool
+		var expanded []*html.Node
+
+		appendTextRef := func(i int) {
+			swap := p.r.nodeSwapByKey[n.Data[from+1:i]]
+
+			inject := &html.Node{
+				Type: html.TextNode,
+				Data: swap.original,
+			}
+
+			expanded = append(expanded, inject)
+			p.offsets.metadataByNode[inject] = &NodeMetadata{
+				TokenOffsets: swap.offsetRange,
+			}
 		}
 
-		split := strings.SplitN(n.Data[1:], "t", 2)
-		swap := p.r.nodeSwapByKey[split[0]]
-		n.Data = swap.original
+		for i, c := range n.Data {
+			if isTextRef {
+				if c < '0' || c > '9' {
+					appendTextRef(i)
 
-		// Mirror textIM: strip a leading \r/\n from the first text child of
-		// <textarea>, <pre>, and <listing>. The standard parser does this at
-		// parse time, but since we encode text as t{key}, the outer tokenizer
-		// never sees the raw newline to strip it. Restore the same behavior here.
+					from = i
+					isTextRef = false
+				} else {
+					continue
+				}
+			}
+
+			if c == 't' {
+				if from < i {
+					inject := &html.Node{
+						Type: html.TextNode,
+						Data: n.Data[from:i],
+					}
+
+					expanded = append(expanded, inject)
+				}
+
+				from = i
+				isTextRef = true
+			}
+		}
+
+		if isTextRef {
+			appendTextRef(len(n.Data))
+		} else if from > 0 {
+			inject := &html.Node{
+				Type: html.TextNode,
+				Data: n.Data[from:],
+			}
+
+			expanded = append(expanded, inject)
+		}
+
+		if len(expanded) > 0 {
+			for i, c := range expanded {
+				c.Parent = n.Parent
+
+				if i == 0 {
+					c.PrevSibling = n.PrevSibling
+					if c.PrevSibling != nil {
+						c.PrevSibling.NextSibling = c
+					} else if c.Parent != nil {
+						c.Parent.FirstChild = c
+					}
+				} else {
+					c.PrevSibling = expanded[i-1]
+					c.PrevSibling.NextSibling = c
+				}
+
+				if i == len(expanded)-1 {
+					c.NextSibling = n.NextSibling
+					if c.NextSibling != nil {
+						c.NextSibling.PrevSibling = c
+					} else if c.Parent != nil {
+						c.Parent.LastChild = c
+					}
+				}
+			}
+
+			// assumes only the first text node may contain the newlines that must be trimmed next; unlikely bug?
+			n = expanded[0]
+		}
+
 		if n.Parent != nil && n.Parent.FirstChild == n &&
 			(n.Parent.DataAtom == atom.Textarea ||
 				n.Parent.DataAtom == atom.Pre ||
@@ -107,35 +179,13 @@ func (p *Parser) rebuildNode(n *html.Node) {
 			if len(n.Data) > 0 && n.Data[0] == '\r' {
 				n.Data = n.Data[1:]
 			}
+
 			if len(n.Data) > 0 && n.Data[0] == '\n' {
 				n.Data = n.Data[1:]
 			}
-			if n.Data == "" {
+
+			if len(n.Data) == 0 {
 				n.Parent.RemoveChild(n)
-				return
-			}
-		}
-
-		p.offsets.metadataByNode[n] = &NodeMetadata{
-			TokenOffsets: swap.offsetRange,
-		}
-
-		if len(split) > 1 {
-			inject := &html.Node{
-				Parent:      n.Parent,
-				PrevSibling: n,
-				NextSibling: n.NextSibling,
-				Type:        html.TextNode,
-				Data:        "t" + split[1],
-			}
-
-			n.NextSibling = inject
-			n = inject
-
-			if n.NextSibling != nil {
-				n.NextSibling.PrevSibling = n
-			} else if n.Parent != nil {
-				n.Parent.LastChild = n
 			}
 		}
 

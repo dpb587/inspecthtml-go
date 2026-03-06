@@ -2506,6 +2506,40 @@ func TestReaderPreLeadingNewline(t *testing.T) {
 	}
 }
 
+func TestReaderBOMTextMerge(t *testing.T) {
+	// A UTF-8 BOM (\xef\xbb\xbf / U+FEFF) is not in the HTML whitespace set
+	// (" \t\r\n\f"), so the standard html.Parse treats it as non-whitespace text
+	// and creates an implied <body> before the <doctype>/<html> tags. inspecthtml
+	// encodes the BOM as t{key}, which the outer html.Parse also treats as
+	// non-whitespace. The outer html.Parse's addText then coalesces subsequent
+	// whitespace text tokens (the \n after doctype, the \n after <html>, the
+	// \n before <meta>, etc.) into the same text node, producing "t{key}\n\n\n".
+	//
+	// rebuildNode must correctly parse the key as digits-only and inject the
+	// trailing whitespace as a separate sibling node so it is preserved.
+	bom := "\xef\xbb\xbf"
+	input := bom + "<!doctype html>\n<html lang=\"de-DE\">\n<head>\n        <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">\n</head><body>hello</body>"
+
+	htmlRoot, _ := html.Parse(strings.NewReader(input))
+	htmlRender := &bytes.Buffer{}
+	if err := html.Render(htmlRender, htmlRoot); err != nil {
+		t.Fatalf("html render error: %v", err)
+	}
+
+	document, _, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	inspectRender := &bytes.Buffer{}
+	if err := html.Render(inspectRender, document); err != nil {
+		t.Fatalf("inspecthtml render error: %v", err)
+	}
+
+	if htmlRender.String() != inspectRender.String() {
+		t.Errorf("render mismatch:\n  html:        %q\n  inspecthtml: %q", htmlRender.String(), inspectRender.String())
+	}
+}
+
 func TestReaderAdoptionAgencySelfClosingAnchor(t *testing.T) {
 	// Self-closing <a /> inside <li> triggers the adoption agency algorithm:
 	// html.Parse creates three <a> copies; inspecthtml should preserve them.
