@@ -411,6 +411,84 @@ func TestReaderTagAttrUnquoted(t *testing.T) {
 	}
 }
 
+func TestReaderTagAttrSingleCharUnquotedBeforeQuoted(t *testing.T) {
+	// Regression test: single-character unquoted attribute value before quoted attribute
+	// Before fix, the regex would skip the first character when searching for unquoted values
+	document, documentOffsets, err := Parse(strings.NewReader(`<html><body data-rsssl=1 class="test">hello</body></html>`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	visitNode(document, func(n *html.Node) {
+		if n.DataAtom != atom.Body {
+			return
+		}
+
+		np, ok := documentOffsets.GetNodeMetadata(n)
+		if !ok {
+			t.Fatal("expected metadata")
+		} else if _a, _e := len(np.TagAttr), 2; _a != _e {
+			t.Errorf("tag attr count: expected %v, got %v", _e, _a)
+		} else if _a, _e := np.TagAttr[0].KeyOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       12,
+				LineColumn: cursorio.TextLineColumn{0, 12},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       22,
+				LineColumn: cursorio.TextLineColumn{0, 22},
+			},
+		}); _a != _e {
+			t.Errorf("tag attr[0] key: expected %v, got %v", _e, _a)
+		} else if np.TagAttr[0].ValueOffsets == nil {
+			t.Errorf("tag attr[0] value: expected non-nil, got nil")
+		} else if _a, _e := np.TagAttr[0].ValueOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       23,
+				LineColumn: cursorio.TextLineColumn{0, 23},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       24,
+				LineColumn: cursorio.TextLineColumn{0, 24},
+			},
+		}); *_a != _e {
+			t.Errorf("tag attr[0] value: expected %v, got %v", _e, _a)
+		} else if _a, _e := np.TagAttr[1].KeyOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       25,
+				LineColumn: cursorio.TextLineColumn{0, 25},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       30,
+				LineColumn: cursorio.TextLineColumn{0, 30},
+			},
+		}); _a != _e {
+			t.Errorf("tag attr[1] key: expected %v, got %v", _e, _a)
+		} else if np.TagAttr[1].ValueOffsets == nil {
+			t.Errorf("tag attr[1] value: expected non-nil, got nil")
+		} else if _a, _e := np.TagAttr[1].ValueOffsets, (cursorio.TextOffsetRange{
+			From: cursorio.TextOffset{
+				Byte:       31,
+				LineColumn: cursorio.TextLineColumn{0, 31},
+			},
+			Until: cursorio.TextOffset{
+				Byte:       37,
+				LineColumn: cursorio.TextLineColumn{0, 37},
+			},
+		}); *_a != _e {
+			t.Errorf("tag attr[1] value: expected %v, got %v", _e, _a)
+		}
+	})
+
+	var rendered = &bytes.Buffer{}
+	err = html.Render(rendered, document)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	} else if _a, _e := rendered.String(), `<html><head></head><body data-rsssl="1" class="test">hello</body></html>`; _a != _e {
+		t.Errorf("rendered: expected %v, got %v", _e, _a)
+	}
+}
+
 func TestReaderTagAttrInvalidQuoted(t *testing.T) {
 	document, documentOffsets, err := Parse(strings.NewReader("<html><body><p title=\"quoted\"suffix\">hello</p></body></html>"))
 	if err != nil {
